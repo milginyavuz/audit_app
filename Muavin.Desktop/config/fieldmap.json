@@ -1,0 +1,127 @@
+{
+  "Header.EntryNumber": [
+    "/defter/xbrl/accountingentries/entryheader/entrynumber",
+    "/defter/xbrl/accountingentries/entryheader/entrynumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/documentnumber",
+    "/defter/xbrl/accountingentries/entryheader/documentnumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/vouchernumber",
+    "/defter/xbrl/accountingentries/entryheader/vouchernumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrynumber",
+    "/defter/xbrl/accountingentries/entryheader/entrynumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/journalnumber",
+    "/defter/xbrl/accountingentries/entryheader/journalnumber/#text"
+  ],
+  "Header.EntryCounter": [
+    "/defter/xbrl/accountingentries/entryheader/entrynumbercounter",
+    "/defter/xbrl/accountingentries/entryheader/entrynumbercounter/#text"
+  ],
+  "Header.PostingDate": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/postingdate",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/postingdate/#text",
+    "/defter/xbrl/accountingentries/entryheader/entereddate",
+    "/defter/xbrl/accountingentries/entryheader/entereddate/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentdate",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentdate/#text"
+  ],
+  "Header.Description": [
+    "/defter/xbrl/accountingentries/entryheader/entrycomment",
+    "/defter/xbrl/accountingentries/entryheader/entrycomment/#text"
+  ],
+
+  "Header.DocumentNumber": [
+    "/defter/xbrl/accountingentries/entryheader/documentnumber",
+    "/defter/xbrl/accountingentries/entryheader/documentreference",
+    "/defter/xbrl/accountingentries/entryheader/documentref",
+    "/defter/xbrl/accountingentries/entryheader/documentno",
+    "/defter/xbrl/accountingentries/entryheader/belgeno",
+    "/defter/xbrl/accountingentries/entryheader/invoicenumber",
+    "/defter/xbrl/accountingentries/entryheader/invoice/reference",
+    "/defter/xbrl/accountingentries/entryheader/invoice/no",
+
+    "/xbrl/accountingentries/entryheader/documentnumber",
+    "/xbrl/accountingentries/entryheader/documentreference",
+    "/xbrl/accountingentries/entryheader/documentref",
+    "/xbrl/accountingentries/entryheader/documentno",
+    "/xbrl/accountingentries/entryheader/belgeno",
+    "/xbrl/accountingentries/entryheader/invoicenumber",
+    "/xbrl/accountingentries/entryheader/invoice/reference",
+    "/xbrl/accountingentries/entryheader/invoice/no"
+  ],
+
+
+  "Detail.AccountMainID": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountmainid",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountmainid/#text"
+  ],
+  "Detail.AccountMainDescription": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountmaindescription",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountmaindescription/#text"
+  ],
+  "Detail.AccountSubID": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountsub/accountsubid",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountsub/accountsubid/#text"
+  ],
+  "Detail.AccountSubDescription": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountsub/accountsubdescription",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/account/accountsub/accountsubdescription/#text"
+  ],
+  "Detail.Amount": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/amount",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/amount/#text"
+  ],
+  "Detail.DebitCreditCode": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/debitcreditcode",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/debitcreditcode/#text"
+  ],
+  "Detail.DocumentNumber": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentnumber",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentnumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentreference",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentreference/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentnumber",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentreference",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentref",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentno",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/belgeno",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoicenumber",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoice/reference",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoice/no",
+
+    "/xbrl/accountingentries/entryheader/entrydetail/documentnumber",
+    "/xbrl/accountingentries/entryheader/entrydetail/documentreference",
+    "/xbrl/accountingentries/entryheader/entrydetail/documentref",
+    "/xbrl/accountingentries/entryheader/entrydetail/documentno",
+    "/xbrl/accountingentries/entryheader/entrydetail/belgeno",
+    "/xbrl/accountingentries/entryheader/entrydetail/invoicenumber",
+    "/xbrl/accountingentries/entryheader/entrydetail/invoice/reference",
+    "/xbrl/accountingentries/entryheader/entrydetail/invoice/no",
+
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoicenumber",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoicenumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoiceno",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/invoiceno/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/belgeno",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/belgeno/#text"
+
+  ],
+
+
+  "Detail.Description": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/detailcomment",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/detailcomment/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documenttypedescription",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documenttypedescription/#text"
+  ],
+  "Detail.EntryCounter": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/linenumber",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/linenumber/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/linenumbercounter",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/linenumbercounter/#text"
+  ],
+  "Detail.PostingDate": [
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/postingdate",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/postingdate/#text",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentdate",
+    "/defter/xbrl/accountingentries/entryheader/entrydetail/documentdate/#text"
+  ]
+}

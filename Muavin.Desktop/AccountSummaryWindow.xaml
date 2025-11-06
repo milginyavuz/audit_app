@@ -1,0 +1,40 @@
+﻿<!-- Muavin.Desktop/AccountSummaryWindow.xaml -->
+<Window x:Class="Muavin.Desktop.AccountSummaryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hesap Özeti" Width="980" Height="620"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
+            <TextBlock Text="Kebir:" Margin="0,0,6,0" VerticalAlignment="Center"/>
+            <TextBox x:Name="tbKBas" Width="70" HorizontalContentAlignment="Center"/>
+            <TextBlock Text="–" Margin="4,0" VerticalAlignment="Center"/>
+            <TextBox x:Name="tbKBit" Width="70" HorizontalContentAlignment="Center"/>
+
+            <Separator Margin="12,0"/>
+
+            <TextBlock Text="Tarih:" Margin="0,0,6,0" VerticalAlignment="Center"/>
+            <DatePicker x:Name="dpBas" Width="140"/>
+            <TextBlock Text="–" Margin="4,0" VerticalAlignment="Center"/>
+            <DatePicker x:Name="dpBit" Width="140"/>
+
+            <Separator Margin="12,0"/>
+
+            <TextBlock Text="Hesap Kodu:" Margin="0,0,6,0" VerticalAlignment="Center"/>
+            <TextBox x:Name="tbHesap" Width="220" ToolTip="Virgülle çoklu"/>
+
+            <Button Content="Özetle" Margin="12,0,0,0" Padding="14,6" Click="Summarize_Click"/>
+            <Button Content="Excel’e Aktar" Margin="6,0,0,0" Padding="14,6" Click="Export_Click"/>
+        </StackPanel>
+
+        <DataGrid x:Name="grid" Margin="8" AutoGenerateColumns="False" IsReadOnly="True" ItemsSource="{Binding}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Hesap Kodu" Binding="{Binding HesapKodu}" Width="180"/>
+                <DataGridTextColumn Header="Hesap Adı" Binding="{Binding HesapAdi}" Width="*"/>
+                <DataGridTextColumn Header="Borç" Binding="{Binding Borc, StringFormat=N2}" Width="150"/>
+                <DataGridTextColumn Header="Alacak" Binding="{Binding Alacak, StringFormat=N2}" Width="150"/>
+                <DataGridTextColumn Header="Bakiye" Binding="{Binding Bakiye, StringFormat=N2}" Width="150"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>
