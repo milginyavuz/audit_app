@@ -1,0 +1,4 @@
+{
+  "ConnectionString": "Host=localhost;Port=5432;Database=muavin;Username=muavin_app;Password=GucluSifre123;Pooling=true;Maximum Pool Size=50;Timeout=15;Command Timeout=60"
+}
+ 

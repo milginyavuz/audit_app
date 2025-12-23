@@ -1,0 +1,143 @@
+﻿<Window x:Class="Muavin.Desktop.ContextWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Çalışma Bağlamı"
+        Width="720" Height="460"
+        MinWidth="680" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Background="#FFF7F7F7">
+
+    <Window.InputBindings>
+        <KeyBinding Key="Enter" Command="{Binding OkCommand}" />
+        <KeyBinding Key="Escape" Command="{Binding ExitCommand}" />
+    </Window.InputBindings>
+
+    <Border Margin="16"
+            Background="White"
+            BorderBrush="#FFE6E6E6"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="18">
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="16"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- HEADER -->
+            <StackPanel Grid.Row="0">
+                <TextBlock Text="Çalışma Bağlamı"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,6"/>
+                <TextBlock Text="Devam etmek için şirket ve yılı seçin. Yeni şirket eklemek için e-Defter XML/ZIP veya TXT seçebilirsiniz."
+                           Foreground="#FF666666"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- FORM -->
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="Şirket (adı ile ara)" Margin="0,0,0,6"/>
+                    <ComboBox x:Name="cbCompany"
+                              Height="32"
+                              IsEditable="True"
+                              IsTextSearchEnabled="True"
+                              StaysOpenOnEdit="True"
+                              DisplayMemberPath="CompanyName"
+                              SelectedValuePath="CompanyCode"
+                              SelectionChanged="CompanyChanged"
+                              Padding="10,3"
+                              BorderBrush="#FFE6E6E6"
+                              BorderThickness="1"/>
+                </StackPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Yıl" Margin="0,0,0,6"/>
+                        <TextBox x:Name="tbYear"
+                                 Width="140"
+                                 Height="32"
+                                 Padding="10,3"
+                                 BorderBrush="#FFE6E6E6"
+                                 BorderThickness="1"
+                                 PreviewTextInput="Year_PreviewTextInput"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="2"
+                               VerticalAlignment="Bottom"
+                               Foreground="#FF888888"
+                               Text="Örn: 2024"
+                               Margin="0,0,0,6"/>
+                </Grid>
+
+                <TextBlock Grid.Row="4"
+                           Margin="0,6,0,0"
+                           Foreground="#FFB00020"
+                           Text="{Binding ErrorText}"
+                           TextWrapping="Wrap"/>
+
+                <!-- filler -->
+                <Border Grid.Row="5"/>
+            </Grid>
+
+            <!-- FOOTER BAR -->
+            <Grid Grid.Row="3" Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left bottom: New company -->
+                <Button Grid.Column="0"
+                        Content="Yeni Şirket (XML/ZIP/TXT)"
+                        Height="30"
+                        MinWidth="220"
+                        Padding="12,6"
+                        Click="AddCompanyFromEdefterClicked"
+                        BorderBrush="#FFE6E6E6"
+                        BorderThickness="1"/>
+
+                <!-- Right bottom: Exit/Ok -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Çık"
+                            Height="30"
+                            Width="90"
+                            Margin="0,0,10,0"
+                            Padding="12,6"
+                            Click="ExitClicked"
+                            BorderBrush="#FFE6E6E6"
+                            BorderThickness="1"/>
+
+                    <Button Content="Devam"
+                            Height="30"
+                            Width="110"
+                            Padding="12,6"
+                            Click="OkClicked"
+                            BorderBrush="#FFE6E6E6"
+                            BorderThickness="1"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

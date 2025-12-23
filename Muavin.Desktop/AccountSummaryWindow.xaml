@@ -5,6 +5,8 @@
         Title="Hesap Özeti" Width="980" Height="620"
         WindowStartupLocation="CenterOwner">
     <DockPanel>
+
+        <!-- ÜST FİLTRE BAR -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
             <TextBlock Text="Kebir:" Margin="0,0,6,0" VerticalAlignment="Center"/>
             <TextBox x:Name="tbKBas" Width="70" HorizontalContentAlignment="Center"/>
@@ -21,19 +23,44 @@
             <Separator Margin="12,0"/>
 
             <TextBlock Text="Hesap Kodu:" Margin="0,0,6,0" VerticalAlignment="Center"/>
-            <TextBox x:Name="tbHesap" Width="220" ToolTip="Virgülle çoklu"/>
+            <TextBox x:Name="tbHesap" Width="220" ToolTip="Virgülle çoklu hesap kodu"/>
 
             <Button Content="Özetle" Margin="12,0,0,0" Padding="14,6" Click="Summarize_Click"/>
             <Button Content="Excel’e Aktar" Margin="6,0,0,0" Padding="14,6" Click="Export_Click"/>
         </StackPanel>
 
+        <!-- HESAP ÖZET TABLOSU -->
         <DataGrid x:Name="grid" Margin="8" AutoGenerateColumns="False" IsReadOnly="True" ItemsSource="{Binding}">
+            <DataGrid.Resources>
+                <!-- Sayısal alanları sağa hizala -->
+                <Style x:Key="RightAlign" TargetType="TextBlock">
+                    <Setter Property="TextAlignment" Value="Right"/>
+                </Style>
+            </DataGrid.Resources>
+
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Hesap Kodu" Binding="{Binding HesapKodu}" Width="180"/>
-                <DataGridTextColumn Header="Hesap Adı" Binding="{Binding HesapAdi}" Width="*"/>
-                <DataGridTextColumn Header="Borç" Binding="{Binding Borc, StringFormat=N2}" Width="150"/>
-                <DataGridTextColumn Header="Alacak" Binding="{Binding Alacak, StringFormat=N2}" Width="150"/>
-                <DataGridTextColumn Header="Bakiye" Binding="{Binding Bakiye, StringFormat=N2}" Width="150"/>
+                <DataGridTextColumn Header="Hesap Kodu"
+                                    Binding="{Binding HesapKodu}"
+                                    Width="180"/>
+
+                <DataGridTextColumn Header="Hesap Adı"
+                                    Binding="{Binding HesapAdi}"
+                                    Width="*"/>
+
+                <DataGridTextColumn Header="Toplam Borç"
+                                    Binding="{Binding Borc, StringFormat=N2}"
+                                    Width="150"
+                                    ElementStyle="{StaticResource RightAlign}"/>
+
+                <DataGridTextColumn Header="Toplam Alacak"
+                                    Binding="{Binding Alacak, StringFormat=N2}"
+                                    Width="150"
+                                    ElementStyle="{StaticResource RightAlign}"/>
+
+                <DataGridTextColumn Header="Toplam Bakiye"
+                                    Binding="{Binding Bakiye, StringFormat=N2}"
+                                    Width="150"
+                                    ElementStyle="{StaticResource RightAlign}"/>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

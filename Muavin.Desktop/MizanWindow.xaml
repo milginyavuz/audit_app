@@ -1,0 +1,200 @@
+﻿<Window x:Class="Muavin.Desktop.MizanWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Muavin.Desktop.ViewModels"
+        xmlns:enums="clr-namespace:Muavin.Desktop.Enums"
+        xmlns:conv="clr-namespace:Muavin.Desktop.Converters"
+        mc:Ignorable="d"
+        Title="Çalışma Mizanı"
+        Height="650"
+        Width="1200"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <conv:LevelToMarginConverter x:Key="LevelToMargin" IndentSize="35"/>
+
+        <Style x:Key="RightAlignedCellStyle" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- FİLTRE SATIRI + HESAPLA BUTONU -->
+        <Border Padding="8" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+            <DockPanel LastChildFill="True">
+
+                <!-- SAĞDA BUTONLAR -->
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Right"
+                            HorizontalAlignment="Right">
+                    <Button Content="Excel'e Aktar"
+                            Width="110"
+                            Height="26"
+                            Margin="0,0,10,0"
+                            Click="BtnExportExcel_Click"/>
+                    <Button Content="Hesapla"
+                            Width="90"
+                            Height="26"
+                            Command="{Binding HesaplaCommand}"/>
+                </StackPanel>
+
+                <!-- FİLTRELER -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                    <!-- Tarih aralığı -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Başlangıç:" VerticalAlignment="Center"/>
+                        <DatePicker SelectedDate="{Binding StartDate}"
+                                    Width="130"
+                                    Margin="5,0,0,0"/>
+                        <TextBlock Text="Bitiş:" VerticalAlignment="Center"
+                                   Margin="10,0,0,0"/>
+                        <DatePicker SelectedDate="{Binding EndDate}"
+                                    Width="130"
+                                    Margin="5,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Mizan tipi -->
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0">
+                        <TextBlock Text="Mizan Tipi:" VerticalAlignment="Center"/>
+                        <ComboBox Width="170"
+                                  Margin="5,0,0,0"
+                                  SelectedValue="{Binding MizanTipi}"
+                                  SelectedValuePath="Tag">
+                            <ComboBoxItem Content="Genel"
+                                          Tag="{x:Static enums:MizanType.Genel}"/>
+                            <ComboBoxItem Content="Sadece Düzeltmeler"
+                                          Tag="{x:Static enums:MizanType.SadeceDuzeltmeler}"/>
+                            <ComboBoxItem Content="İki Tarih Arası"
+                                          Tag="{x:Static enums:MizanType.IkiTarihArasi}"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- HAREKET DURUMU -->
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0">
+                        <TextBlock Text="Hareket:" VerticalAlignment="Center"/>
+                        <ComboBox Width="160"
+                                  Margin="5,0,0,0"
+                                  SelectedValue="{Binding HareketDurumu}"
+                                  SelectedValuePath="Tag">
+                            <ComboBoxItem Content="Hepsi"
+                                          Tag="{x:Static enums:HareketDurumu.Hepsi}"/>
+                            <ComboBoxItem Content="Sadece İşleyenler"
+                                          Tag="{x:Static enums:HareketDurumu.SadeceIsleyen}"/>
+                            <ComboBoxItem Content="Sadece İşlemeyenler"
+                                          Tag="{x:Static enums:HareketDurumu.SadeceIslemeyen}"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- GÖRÜNÜM MODU -->
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0">
+                        <TextBlock Text="Görünüm:" VerticalAlignment="Center"/>
+                        <ComboBox Width="210"
+                                  Margin="5,0,0,0"
+                                  SelectedValue="{Binding Gorunum}"
+                                  SelectedValuePath="Tag">
+                            <ComboBoxItem Content="Açık Görünüm (detaylı)"
+                                          Tag="{x:Static enums:GorunumModu.AcikDetayli}"/>
+                            <ComboBoxItem Content="Kapalı Görünüm (sadece kebir)"
+                                          Tag="{x:Static enums:GorunumModu.KapaliSadeceKebir}"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- MİZAN GRIDİ -->
+        <DataGrid Grid.Row="1"
+                  Margin="0,10,0,0"
+                  ItemsSource="{Binding Rows}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  IsReadOnly="True"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  RowHeaderWidth="0">
+
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="FontWeight" Value="Normal"/>
+                    <Setter Property="Background" Value="White"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsKebirRow}" Value="True">
+                            <Setter Property="FontWeight" Value="Bold"/>
+                            <Setter Property="Background" Value="#FFF0F0F0"/>
+                            <Setter Property="BorderThickness" Value="0,1,0,1"/>
+                            <Setter Property="BorderBrush" Value="#FFB0B0B0"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+
+            <DataGrid.Columns>
+
+                <DataGridTextColumn Header="Kebir"
+                                    Binding="{Binding Kebir}"
+                                    Width="80"/>
+
+                <DataGridTemplateColumn Header="Hesap Kodu" Width="170">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding HesapKodu}"
+                                       Margin="{Binding Level, Converter={StaticResource LevelToMargin}}"
+                                       VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Header="Hesap Adı" Width="260">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding HesapAdi}"
+                                       Margin="{Binding Level, Converter={StaticResource LevelToMargin}}"
+                                       VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTextColumn Header="Borç"
+                                    Binding="{Binding Borc, StringFormat=N2}"
+                                    Width="120"
+                                    ElementStyle="{StaticResource RightAlignedCellStyle}"/>
+
+                <DataGridTextColumn Header="Alacak"
+                                    Binding="{Binding Alacak, StringFormat=N2}"
+                                    Width="120"
+                                    ElementStyle="{StaticResource RightAlignedCellStyle}"/>
+
+                <DataGridTextColumn Header="Borç Bakiye"
+                                    Binding="{Binding BorcBakiye, StringFormat=N2}"
+                                    Width="120"
+                                    ElementStyle="{StaticResource RightAlignedCellStyle}"/>
+
+                <DataGridTextColumn Header="Alacak Bakiye"
+                                    Binding="{Binding AlacakBakiye, StringFormat=N2}"
+                                    Width="120"
+                                    ElementStyle="{StaticResource RightAlignedCellStyle}"/>
+
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>

@@ -1,0 +1,77 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="config\fieldmap.json" />
+    <None Remove="tests\6120062612-202401-Y-000000.xml" />
+    <None Remove="tests\6120062612-202402-Y-000000.xml" />
+    <None Remove="tests\6120062612-202403-Y-000000.xml" />
+    <None Remove="tests\6120062612-202404-Y-000000.xml" />
+    <None Remove="tests\6120062612-202405-Y-000000.xml" />
+    <None Remove="tests\6120062612-202406-Y-000000.xml" />
+    <None Remove="tests\6120062612-202407-Y-000000.xml" />
+    <None Remove="tests\6120062612-202408-Y-000000.xml" />
+    <None Remove="tests\6120062612-202409-Y-000000.xml" />
+    <None Remove="tests\6120062612-202410-Y-000000.xml" />
+    <None Remove="tests\6120062612-202411-Y-000000.xml" />
+    <None Remove="tests\6120062612-202412-Y-000000.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="config\fieldmap.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202401-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202402-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202403-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202404-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202405-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202406-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202407-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202408-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202409-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202410-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202411-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tests\6120062612-202412-Y-000000.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Muavin.Xml\Muavin.Xml\Muavin.Xml.csproj" />
+  </ItemGroup>
+
+</Project>
