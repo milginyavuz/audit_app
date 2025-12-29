@@ -1,4 +1,5 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿//ContextState.cs
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Muavin.Desktop
 {

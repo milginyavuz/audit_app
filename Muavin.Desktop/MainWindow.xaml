@@ -1,4 +1,5 @@
-﻿<Window x:Class="Muavin.Desktop.MainWindow"
+﻿<!-- MainWindow.xaml-->
+<Window x:Class="Muavin.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -43,12 +44,6 @@
                             Margin="6,0,0,0"
                             Padding="14,6"
                             Command="{Binding ChangeContextCommand}" />
-
-                    <!-- DB’den yükle (seçili bağlama göre) -->
-                    <Button Content="DB'den Yükle"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding LoadFromDatabaseCommand}" />
 
                     <!-- Veritabanına veri ekle (seçili bağlama göre) -->
                     <Button Content="Veritabanına Veri Ekle"
@@ -113,6 +108,28 @@
                             Command="{Binding ClearAllCommand}"/>
 
                     <Button Content="Sıfırla"
+                            Padding="14,6"
+                            Command="{Binding ResetFiltersCommand}" />
+                    
+                    <Separator Margin="12,0"/>
+
+                    <ToggleButton Content="Açılış Hariç"
+                                Width="120"
+                                IsChecked="{Binding Filters.ExcludeAcilis, Mode=TwoWay}" />
+
+                    <ToggleButton Content="Kapanış Hariç"
+                                Width="120"
+                                Margin="6,0,0,0"
+                                IsChecked="{Binding Filters.ExcludeKapanis, Mode=TwoWay}" />
+
+                    <Button Content="Ara"
+                            Margin="12,0,0,0"
+                            Padding="14,6"
+                            Command="{Binding ApplyFiltersCommand}"/>
+
+                    <!-- Temizle: ClearAll yerine filtre temizleme daha mantıklı; ama sende ikisi de var -->
+                    <Button Content="Sıfırla"
+                            Margin="6,0,0,0"
                             Padding="14,6"
                             Command="{Binding ResetFiltersCommand}" />
                 </StackPanel>

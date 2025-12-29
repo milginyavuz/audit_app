@@ -1,4 +1,5 @@
-﻿using System;
+﻿//ContextWindow.xaml.cs
+using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -156,10 +157,23 @@ namespace Muavin.Desktop
 
                 if (ext == ".txt")
                 {
-                    // TXT’den çıkar (VKN + Ünvan)
+                    // TXT’den sadece VKN çıkar
                     var info = TryParseCompanyFromTxt(picked);
                     taxId = info.taxId;
-                    title = info.title;
+
+                    if (string.IsNullOrWhiteSpace(taxId))
+                    {
+                        ErrorText = "TXT içinde VKN (10 haneli) bulunamadı.";
+                        return;
+                    }
+
+                    // Ünvan manuel girilecek
+                    var manualName = Microsoft.VisualBasic.Interaction.InputBox(
+                        $"VKN: {taxId}\nŞirket adını girin:",
+                        "Şirket Adı",
+                        "");
+
+                    title = string.IsNullOrWhiteSpace(manualName) ? taxId : manualName.Trim();
                 }
                 else
                 {

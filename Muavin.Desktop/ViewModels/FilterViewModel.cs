@@ -15,10 +15,16 @@ namespace Muavin.Desktop.ViewModels
         [ObservableProperty] private string? _hesapKodu;
         [ObservableProperty] private string? _aciklama;
 
+        // NEW
+        [ObservableProperty] private bool _excludeAcilis;
+        [ObservableProperty] private bool _excludeKapanis;
+
         public void Reset()
         {
             KebirBas = KebirBit = HesapKodu = Aciklama = null;
             TarihBas = TarihBit = null;
+            ExcludeAcilis = false;
+            ExcludeKapanis = false;
         }
     }
 }

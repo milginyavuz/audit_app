@@ -32,8 +32,18 @@ namespace Muavin.Desktop.ViewModels
         [ObservableProperty] private int _progressMax = 100;
         [ObservableProperty] private string? _totalsText;
 
+
         [ObservableProperty]
         private MuavinRow? _selectedRow;
+
+        // ========= MANUEL FİŞ TÜRÜ (UI seçimi) =========
+        // UI'dan bind edeceksin (ComboBox SelectedItem vs)
+        [ObservableProperty]
+        private string? _selectedFisTuru;
+
+        // Kullanıcı tarafından manuel değiştirilen groupKey seti (Kaydet için)
+        private readonly HashSet<string> _dirtyFisTypeGroupKeys = new(StringComparer.Ordinal);
+
         public FilterViewModel Filters { get; } = new();
         public TotalsViewModel Totals { get; } = new();
 
@@ -47,7 +57,6 @@ namespace Muavin.Desktop.ViewModels
 
         public string ContextDisplay => _context.Display;
 
-        // App.xaml.cs enjekte edecek
         public MainViewModel(ContextState context, DbMuavinRepository repo)
         {
             _context = context;
@@ -75,7 +84,6 @@ namespace Muavin.Desktop.ViewModels
 
             OnPropertyChanged(nameof(ContextDisplay));
 
-            // bağlam değişince otomatik DB’den yükle
             await LoadFromDatabaseAsync();
         }
 
@@ -94,7 +102,20 @@ namespace Muavin.Desktop.ViewModels
                 IsBusy = true;
                 StatusText = $"{_context.Display} verileri yükleniyor…";
 
+                // 1) satırları çek
                 var rows = await _dbRepo.GetRowsAsync(_context.CompanyCode!, _context.Year);
+
+                // 2) override'ları çek ve uygula (fis türü)
+                //    override tablosu: company+year+group_key -> fis_turu
+                var overrides = await _dbRepo.GetFisTypeOverridesAsync(_context.CompanyCode!, _context.Year);
+                if (overrides.Count > 0)
+                {
+                    foreach (var r in rows)
+                    {
+                        if (!string.IsNullOrWhiteSpace(r.GroupKey) && overrides.TryGetValue(r.GroupKey!, out var ft))
+                            r.FisTuru = ft;
+                    }
+                }
 
                 var ordered = rows
                     .OrderBy(r => r.PostingDate ?? DateTime.MinValue)
@@ -107,15 +128,132 @@ namespace Muavin.Desktop.ViewModels
                 _allRows.Clear();
                 _allRows.AddRange(ordered);
 
+                _dirtyFisTypeGroupKeys.Clear(); // reload ile dirty reset
                 _userChangedSort = false;
 
                 ApplyCurrentFilterToView(_allRows);
+                await ComputeContraForVisibleAsync();
+
                 StatusText = $"DB'den {Rows.Count} satır yüklendi. ({_context.Display})";
             }
             catch (Exception ex)
             {
-                StatusText = "DB hata: " + ex.Message;
-                Logger.WriteLine("[DB ERROR] " + ex);
+                StatusText = "Hata: " + ex.Message;
+
+                if (ex is Npgsql.PostgresException pg)
+                {
+                    Logger.WriteLine("[PG ERROR] " + pg.MessageText);
+                    Logger.WriteLine("[PG] SqlState=" + pg.SqlState);
+                    Logger.WriteLine("[PG] Detail=" + pg.Detail);
+                    Logger.WriteLine("[PG] Where=" + pg.Where);
+                    Logger.WriteLine("[PG] Position=" + pg.Position);
+                    Logger.WriteLine("[PG] Routine=" + pg.Routine);
+                    Logger.WriteLine("[PG] Schema=" + pg.SchemaName + " Table=" + pg.TableName + " Column=" + pg.ColumnName);
+                    StatusText = $"DB Hata ({pg.SqlState}): {pg.MessageText}";
+                }
+                else
+                {
+                    Logger.WriteLine("[ERROR] " + ex);
+                }
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        // ================== MANUEL FİŞ TÜRÜ: UYGULA (EKRAN) =====================
+        // UI tarafında: seçili satır(lar) üzerinden çalışmak istersen
+        // şimdilik SelectedRow üzerinden yapıyoruz.
+        [RelayCommand]
+        private void ApplySelectedFisTuruToSelection()
+        {
+            if (!_context.HasContext)
+            {
+                StatusText = "Önce bağlam seçin.";
+                return;
+            }
+
+            var ft = (SelectedFisTuru ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(ft))
+            {
+                StatusText = "Fiş türü seçin.";
+                return;
+            }
+
+            var row = SelectedRow;
+            if (row == null)
+            {
+                StatusText = "Önce bir satır seçin.";
+                return;
+            }
+
+            // groupKey yoksa üret (DB/KeyFor ile uyumlu)
+            if (string.IsNullOrWhiteSpace(row.GroupKey))
+                row.GroupKey = BuildGroupKey(row);
+
+            // Aynı fişe ait tüm satırlara uygula (groupKey bazlı)
+            var gk = row.GroupKey!;
+            foreach (var r in _allRows.Where(x => string.Equals(x.GroupKey, gk, StringComparison.Ordinal)))
+                r.FisTuru = ft;
+
+            // dirty set'e ekle
+            _dirtyFisTypeGroupKeys.Add(gk);
+
+            // ekrandaki filtre görünümü etkilenmiş olabilir (Exclude Açılış/Kapanış)
+            var filtered = ApplyFilterLogic(_allRows);
+            ApplyCurrentFilterToView(filtered);
+
+            StatusText = $"Manuel fiş türü uygulandı: {ft} (Kaydetmek için 'Kaydet' butonuna bas)";
+        }
+
+        // ================== MANUEL FİŞ TÜRÜ: KAYDET (DB) =====================
+        [RelayCommand]
+        private async Task SaveFisTuruOverridesToDbAsync()
+        {
+            if (!_context.HasContext)
+            {
+                StatusText = "Önce bağlam seçin.";
+                return;
+            }
+
+            if (_dirtyFisTypeGroupKeys.Count == 0)
+            {
+                StatusText = "Kaydedilecek manuel fiş türü değişikliği yok.";
+                return;
+            }
+
+            try
+            {
+                IsBusy = true;
+                StatusText = "Manuel fiş türü değişiklikleri DB’ye kaydediliyor…";
+
+                // groupKey -> fisTuru (tekil)
+                var items = _dirtyFisTypeGroupKeys
+                    .Select(gk =>
+                    {
+                        var anyRow = _allRows.FirstOrDefault(r => string.Equals(r.GroupKey, gk, StringComparison.Ordinal));
+                        var ft = (anyRow?.FisTuru ?? "").Trim();
+                        return (groupKey: gk, fisTuru: ft);
+                    })
+                    .Where(x => x.groupKey.Length > 0 && x.fisTuru.Length > 0)
+                    .ToList();
+
+                await _dbRepo.UpsertFisTypeOverridesAsync(
+                    companyCode: _context.CompanyCode!,
+                    year: _context.Year,
+                    items: items,
+                    updatedBy: Environment.UserName);
+
+                _dirtyFisTypeGroupKeys.Clear();
+
+                StatusText = "Kaydedildi. DB’den yeniden yükleniyor…";
+                await LoadFromDatabaseAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusText = "Kaydetme hatası: " + ex.Message;
+                Logger.WriteLine("[FIS SAVE ERROR] " + ex);
             }
             finally
             {
@@ -157,6 +295,8 @@ namespace Muavin.Desktop.ViewModels
                 return;
             }
 
+            List<string>? tempDirs = null;
+
             try
             {
                 IsBusy = true;
@@ -166,9 +306,11 @@ namespace Muavin.Desktop.ViewModels
                 var logPath = Path.Combine(AppContext.BaseDirectory, "debug.txt");
                 Logger.Init(logPath, overwrite: true);
 
-                FieldMap.Load();
+                FieldMap.Load(); // XML için
 
-                var files = ExpandToDataFiles(_selectedInputs);
+                var (files, temps) = ExpandToDataFilesWithTemps(_selectedInputs);
+                tempDirs = temps;
+
                 if (files.Count == 0)
                 {
                     StatusText = "Seçimlerde XML/TXT bulunamadı.";
@@ -191,12 +333,21 @@ namespace Muavin.Desktop.ViewModels
                     {
                         int py, pm;
                         list = _txtParser.Parse(file, _context.CompanyCode ?? "", out py, out pm);
+
+                        var meta = _txtParser.LastMeta;
+                        if (meta.DistinctYearMonthCount > 1)
+                            Logger.WriteLine($"[TXT META] {Path.GetFileName(file)} => {meta.DistinctYearMonthCount} ay (min={meta.MinDate:yyyy-MM-dd}, max={meta.MaxDate:yyyy-MM-dd})");
                     }
                     else
                     {
                         var parsed = _parser.Parse(file);
                         list = parsed?.ToList() ?? new List<MuavinRow>();
                     }
+
+                    // groupKey üret (manuel işlemler için)
+                    foreach (var r in list)
+                        if (string.IsNullOrWhiteSpace(r.GroupKey))
+                            r.GroupKey = BuildGroupKey(r);
 
                     _allRows.AddRange(list);
                     parsedCount += list.Count;
@@ -217,6 +368,7 @@ namespace Muavin.Desktop.ViewModels
                 _allRows.Clear();
                 _allRows.AddRange(ordered);
 
+                _dirtyFisTypeGroupKeys.Clear();
                 _userChangedSort = false;
 
                 ApplyCurrentFilterToView(_allRows);
@@ -233,6 +385,8 @@ namespace Muavin.Desktop.ViewModels
             {
                 Logger.Close();
                 IsBusy = false;
+
+                CleanupTempDirs(tempDirs);
             }
         }
 
@@ -269,6 +423,8 @@ namespace Muavin.Desktop.ViewModels
 
         private async Task ParseAndSaveToDbAsync()
         {
+            List<string>? tempDirs = null;
+
             try
             {
                 IsBusy = true;
@@ -280,7 +436,9 @@ namespace Muavin.Desktop.ViewModels
 
                 FieldMap.Load();
 
-                var files = ExpandToDataFiles(_selectedInputs);
+                var (files, temps) = ExpandToDataFilesWithTemps(_selectedInputs);
+                tempDirs = temps;
+
                 if (files.Count == 0)
                 {
                     StatusText = "Seçimlerde XML/TXT bulunamadı.";
@@ -300,6 +458,12 @@ namespace Muavin.Desktop.ViewModels
                     {
                         int py, pm;
                         list = _txtParser.Parse(file, _context.CompanyCode!, out py, out pm);
+
+                        var meta = _txtParser.LastMeta;
+                        if (meta.DistinctYearMonthCount > 1)
+                        {
+                            Logger.WriteLine($"[TXT META] {Path.GetFileName(file)} => {meta.DistinctYearMonthCount} ay (min={meta.MinDate:yyyy-MM-dd}, max={meta.MaxDate:yyyy-MM-dd})");
+                        }
                     }
                     else
                     {
@@ -307,9 +471,15 @@ namespace Muavin.Desktop.ViewModels
                         list = parsed?.ToList() ?? new List<MuavinRow>();
                     }
 
+                    // groupKey üret
+                    foreach (var r in list)
+                        if (string.IsNullOrWhiteSpace(r.GroupKey))
+                            r.GroupKey = BuildGroupKey(r);
+
                     parsedCount += list.Count;
 
                     StatusText = $"DB’ye yazılıyor… {Path.GetFileName(file)}";
+
                     await _dbRepo.BulkInsertRowsAsync(
                         companyCode: _context.CompanyCode!,
                         rows: list,
@@ -327,12 +497,29 @@ namespace Muavin.Desktop.ViewModels
             catch (Exception ex)
             {
                 StatusText = "Hata: " + ex.Message;
-                Logger.WriteLine("[IMPORT ERROR] " + ex);
+
+                if (ex is Npgsql.PostgresException pg)
+                {
+                    Logger.WriteLine("[PG ERROR] " + pg.MessageText);
+                    Logger.WriteLine("[PG] SqlState=" + pg.SqlState);
+                    Logger.WriteLine("[PG] Detail=" + pg.Detail);
+                    Logger.WriteLine("[PG] Where=" + pg.Where);
+                    Logger.WriteLine("[PG] Position=" + pg.Position);
+                    Logger.WriteLine("[PG] Routine=" + pg.Routine);
+                    Logger.WriteLine("[PG] Schema=" + pg.SchemaName + " Table=" + pg.TableName + " Column=" + pg.ColumnName);
+                    StatusText = $"DB Hata ({pg.SqlState}): {pg.MessageText}";
+                }
+                else
+                {
+                    Logger.WriteLine("[ERROR] " + ex);
+                }
             }
             finally
             {
                 Logger.Close();
                 IsBusy = false;
+
+                CleanupTempDirs(tempDirs);
             }
         }
 
@@ -518,9 +705,10 @@ namespace Muavin.Desktop.ViewModels
             view.Refresh();
         }
 
-        private static List<string> ExpandToDataFiles(IEnumerable<string> inputs)
+        private static (List<string> Files, List<string> TempDirs) ExpandToDataFilesWithTemps(IEnumerable<string> inputs)
         {
             var result = new List<string>();
+            var temps = new List<string>();
 
             foreach (var path in inputs)
             {
@@ -545,12 +733,32 @@ namespace Muavin.Desktop.ViewModels
                     Directory.CreateDirectory(temp);
                     System.IO.Compression.ZipFile.ExtractToDirectory(path, temp, overwriteFiles: true);
 
+                    temps.Add(temp);
+
                     result.AddRange(Directory.EnumerateFiles(temp, "*.xml", SearchOption.AllDirectories));
                     result.AddRange(Directory.EnumerateFiles(temp, "*.txt", SearchOption.AllDirectories));
                 }
             }
 
-            return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return (result.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), temps);
+        }
+
+        private static void CleanupTempDirs(List<string>? tempDirs)
+        {
+            if (tempDirs == null || tempDirs.Count == 0) return;
+
+            foreach (var d in tempDirs)
+            {
+                try
+                {
+                    if (Directory.Exists(d))
+                        Directory.Delete(d, recursive: true);
+                }
+                catch
+                {
+                    // production: temp cleanup failure should not crash app
+                }
+            }
         }
 
         private List<MuavinRow> ApplyFilterLogic(IEnumerable<MuavinRow> source)
@@ -586,6 +794,13 @@ namespace Muavin.Desktop.ViewModels
 
             if (!string.IsNullOrWhiteSpace(Filters.Aciklama))
                 q = q.Where(r => (r.Aciklama ?? "").Contains(Filters.Aciklama!, StringComparison.OrdinalIgnoreCase));
+
+            // ✅ NEW: Açılış / Kapanış hariç tut
+            if (Filters.ExcludeAcilis)
+                q = q.Where(r => !string.Equals((r.FisTuru ?? "").Trim(), "Açılış", StringComparison.OrdinalIgnoreCase));
+
+            if (Filters.ExcludeKapanis)
+                q = q.Where(r => !string.Equals((r.FisTuru ?? "").Trim(), "Kapanış", StringComparison.OrdinalIgnoreCase));
 
             return q
                 .OrderBy(r => r.PostingDate ?? DateTime.MinValue)
@@ -625,6 +840,22 @@ namespace Muavin.Desktop.ViewModels
         private void UpdateTotalsText()
         {
             TotalsText = $"Toplam Borç: {Totals.Borc:N2} | Toplam Alacak: {Totals.Alacak:N2}";
+        }
+
+        // MainViewModel’deki KeyFor ile uyumlu olacak şekilde groupKey üret
+        private static string BuildGroupKey(MuavinRow r)
+        {
+            var d = r.PostingDate?.ToString("yyyy-MM-dd") ?? "";
+            var no = r.EntryNumber ?? "";
+            var doc = r.DocumentNumber ?? "";
+
+            if (r.FisTuru is "Açılış" or "Kapanış")
+                return $"{no}|{d}";
+
+            if (!string.IsNullOrWhiteSpace(doc))
+                return $"{no}|{d}|DOC:{doc}";
+
+            return $"{no}|{d}";
         }
     }
 
