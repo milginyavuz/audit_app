@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Muavin.PathMap": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\user\\Desktop\\path-map\" \"C:\\Users\\user\\Desktop\\path-map-out\""
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Muavin.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\user\\Desktop\\tests\" \"C:\\Users\\user\\Desktop\\out\\muavin_2024.xlsx\"\r\n"
+    }
+  }
+}

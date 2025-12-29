@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Muavin.XmlTagLister": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\user\\Desktop\\tests\"  \"C:\\Users\\user\\Desktop\\etiket_tum.txt\"  \"C:\\Users\\user\\Desktop\\etiket_element.txt\"  \"C:\\Users\\user\\Desktop\\etiket_attribute.txt\"  \"C:\\Users\\user\\Desktop\\etiket_text.txt\"\r\n"
+    }
+  }
+}
