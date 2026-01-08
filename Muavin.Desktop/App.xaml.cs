@@ -130,9 +130,9 @@ namespace Muavin.Desktop
                 return;
             }
 
-            // =====================
+            
             // CONTEXT WINDOW
-            // =====================
+            
             BootLog("Creating ContextWindow");
             var ctxWin = new ContextWindow(_context, _repo);
 
@@ -147,9 +147,9 @@ namespace Muavin.Desktop
                 return;
             }
 
-            // =====================
+            
             // MAIN WINDOW
-            // =====================
+           
             var vm = new MainViewModel(_context, _repo);
             var main = new MainWindow
             {
