@@ -53,8 +53,8 @@ namespace Muavin.Desktop.Util
         }
 
         /// <summary>
-        /// Mizan kebir başlık satırında gösterilecek adı döndürür.
-        /// Öncelik: HesapPlani.txt (kebirCode) -> "8/9" başlıkları -> fallbackName -> ""
+        /// mizan kebir başlık satırında gösterilecek adı döndürür
+        /// öncelik HesapPlani.txt (kebirCode) -> "8/9" başlıkları -> fallbackName -> ""
         /// </summary>
         public static string GetNameForHeader(string kebirCode, string? fallbackName = null)
         {
@@ -70,7 +70,7 @@ namespace Muavin.Desktop.Util
                 return TryGetKebirName("9", out var n9) ? n9 : "Nazım Hesaplar";
             }
 
-            // Normal kebir (100..999)
+            // Normal kebir
             if (kebirCode.Length >= 3)
             {
                 var k = kebirCode.Substring(0, 3);
@@ -83,7 +83,7 @@ namespace Muavin.Desktop.Util
 
         private static (string code, string name)? TryParseLineToPair(string line)
         {
-            // format 1:  "8=SERBEST HESAPLAR"
+            // format 1:  8=SERBEST HESAPLAR
             var eq = line.IndexOf('=');
             if (eq > 0)
             {
@@ -99,16 +99,16 @@ namespace Muavin.Desktop.Util
                 return (code, NormalizeName(right));
             }
 
-            // format 2: "733. Genel Üretim..." veya "8. Serbest Hesaplar" veya "100 Kasa"
+            // format 2: 733. Genel Üretim
             var digits2 = new string(line.TakeWhile(char.IsDigit).ToArray());
             if (digits2.Length == 0) return null;
 
-            // txt’de hem 1 hane (8,9) hem 2 hane (10,11,...) hem 3 hane (100..999) var.
-            // Biz kebir için 1 veya 3 kullanacağız.
+            // txtde  1li (8,9)  2li 3lü hane var
+            //  kebir için 1 veya 3 kullanacağız
             string code2 =
                 digits2.Length >= 3 ? digits2[..3] :
                 digits2.Length == 1 ? digits2 :
-                digits2; // 2 hane geldi (10,11,12...) — istersen sonra kullanırız
+                digits2; // 2 hane geldi
 
             var rest = line[digits2.Length..].TrimStart();
             if (rest.StartsWith(".")) rest = rest[1..].TrimStart();
@@ -116,8 +116,8 @@ namespace Muavin.Desktop.Util
             var name2 = NormalizeName(rest);
             if (string.IsNullOrWhiteSpace(name2)) return null;
 
-            // Eğer 2 hane geldiyse (10,11,12...) şu an kebir sözlüğüne yazmayacağız ama parse bozulmasın:
-            // Load() zaten sadece 1 veya 3 hane ise ekliyor.
+            // eğer 2 hane geldiyse şu an kebir sözlüğüne yazmıyoruz ama parse bozulmamalı
+            // Load() zaten sadece 1 veya 3 ise ekliyor
             return (code2, name2);
         }
 
