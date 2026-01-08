@@ -12,7 +12,7 @@ namespace Muavin.Desktop
 
         public string? SelectedCompanyCode { get; private set; }
         public int? SelectedYear { get; private set; }
-        public int? SelectedMonth { get; private set; } // artık kullanılmıyor, null kalacak
+        public int? SelectedMonth { get; private set; } // artık kullanılmıyor null kalacak
 
         public CompanyPeriodWindow(DbMuavinRepository repo)
         {
@@ -33,7 +33,7 @@ namespace Muavin.Desktop
             if (cbCompany.SelectedValue is not string code || string.IsNullOrWhiteSpace(code))
                 return;
 
-            // ✅ Ay yerine YIL listesi
+            // Ay yerine YIL listesi
             var years = await _repo.GetYearsAsync(code);
 
             var items = years
@@ -53,13 +53,13 @@ namespace Muavin.Desktop
             if (cbCompany.SelectedValue is not string code || string.IsNullOrWhiteSpace(code))
                 return;
 
-            // ✅ Yıl seçimi
+            // Yıl seçimi
             if (cbPeriod.SelectedValue is not int y)
                 return;
 
             SelectedCompanyCode = code;
             SelectedYear = y;
-            SelectedMonth = null; // yıl bazlı; ay yok
+            SelectedMonth = null; // yıl bazlı ay yok
 
             DialogResult = true;
             Close();
