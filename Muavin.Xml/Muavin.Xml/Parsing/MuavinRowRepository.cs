@@ -7,12 +7,12 @@ using Npgsql;
 namespace Muavin.Xml.Parsing
 {
     /// <summary>
-    /// MuavinRow nesnelerini PostgreSQL'deki muavin_row tablosuna yazmak için repository.
+    /// MuavinRow nesnelerini postgreSQLdeki muavin_row tablosuna yazmak için repository
     /// </summary>
     public static class MuavinRowRepository
     {
         /// <summary>
-        /// Bir XML dosyasından gelen satırları toplu olarak muavin_row tablosuna ekler.
+        /// xml dosyasından gelen satırları toplu olarak muavin_row tablosuna ekler
         /// </summary>
         public static async Task InsertManyAsync(
             string connectionString,
