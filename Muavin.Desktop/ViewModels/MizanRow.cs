@@ -2,7 +2,7 @@
 namespace Muavin.Desktop.ViewModels
 {
     /// <summary>
-    /// Çalışma mizanındaki bir satırı temsil eder.
+    /// çalışma mizanındaki bir satırı temsil eder
     /// </summary>
     public sealed class MizanRow
     {
@@ -16,16 +16,16 @@ namespace Muavin.Desktop.ViewModels
         public decimal BorcBakiye { get; set; }
         public decimal AlacakBakiye { get; set; }
 
-        // Geriye dönük uyumluluk için tutuluyor (UI/Excel'de kullanılmıyor)
+        // geriye dönük uyumluluk için tutuluyor
         public decimal DuzenlenmisBorcBakiye { get; set; }
         public decimal DuzenlenmisAlacakBakiye { get; set; }
 
-        // İşleyen / açık hesap flag’leri
+        // işleyen / açık hesap flagleri
         public bool IsIsleyen { get; set; }
         public bool IsAcik { get; set; }
 
-        // UI için
-        public bool IsKebirRow { get; set; }   // Kebir satırı mı?
+        // ui için
+        public bool IsKebirRow { get; set; }   // kebir satırı mı
         public int Level { get; set; }         // 0 = kebir, 1 = alt hesap
     }
 }
