@@ -9,9 +9,6 @@
         Width="1602" Height="1008"
         WindowStartupLocation="CenterScreen">
 
-    <!-- ÖNEMLİ: DataContext artık App.xaml.cs içinde set edilecek.
-         Buradaki Window.DataContext BLOĞUNU KALDIRDIK. -->
-
     <DockPanel>
 
         <!-- ÜST ŞERİT -->
@@ -38,8 +35,7 @@
                             Padding="14,6"
                             Command="{Binding PickCommand}"/>
 
-                    <!-- Eskisi: Şirket / Dönem Seç…
-                         Yenisi: Bağlam Değiştir (ContextWindow açar) -->
+                    <!-- Bağlam Değiştir (ContextWindow açar) -->
                     <Button Content="Bağlam Değiştir…"
                             Margin="6,0,0,0"
                             Padding="14,6"
@@ -134,7 +130,7 @@
                             Command="{Binding ResetFiltersCommand}" />
                 </StackPanel>
 
-                <!-- Sağdaki butonlar -->
+                <!-- sağdaki butonlar -->
                 <StackPanel Grid.Column="4"
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
@@ -180,7 +176,7 @@
             </StatusBarItem>
         </StatusBar>
 
-        <!-- TABLO (SADECE bu kolonlar) -->
+        <!-- TABLO -->
         <DataGrid x:Name="RowsGrid"
                   ItemsSource="{Binding Rows}"
                   SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
