@@ -3,22 +3,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using CommunityToolkit.HighPerformance;              // (opsiyonel) - ileride StringPool vb. kullanmak isterseniz
+using CommunityToolkit.HighPerformance;              // (opsiyonel)
 using CommunityToolkit.HighPerformance.Buffers;     // (opsiyonel)
 using Muavin.Xml.Util;
 
 namespace Muavin.Xml.Util
 {
     /// <summary>
-    /// fieldmap.json içeriğini okur ve anahtar -> XPath listesi eşlemesini sunar.
-    /// Aşağıdaki yer tutucuları otomatik genişletir:
+    /// fieldmap.json okur ve anahtar -> XPath listesi eşlemesini getirir
+    /// yer tutucuları otomatik genişletir:
     ///  - (ROOT)           => defter  ve edefter  varyasyonları üretir
     ///  - (defter|edefter) => defter  ve edefter  varyasyonları üretir
     /// 
-    /// Yükleme sırasında:
-    ///  - Tüm yollar PathNormalizer.Normalize ile normalize edilir (küçük harf vb.)
-    ///  - Element yollarına güvenli olması için “/#text” varyasyonu da eklenir
-    ///  - Tekrarlı yollar Ordinal olarak tekilleştirilir
+    /// yüklerken
+    ///  - tüm yollar PathNormalizer.Normalize ile normalize edilir 
+    ///  - element yollarına güvenli olması için “/#text” varyasyonu da eklenir
+    ///  - tekrarlı yollar Ordinal olarak tekilleştirilir
     /// </summary>
     public sealed class FieldMap
     {
@@ -26,13 +26,11 @@ namespace Muavin.Xml.Util
 
         private FieldMap(Dictionary<string, string[]> map) => _map = map;
 
-        // Tekil erişim isteyenler için küçük bir cache.
+        // tekil erişim isteyenler için küçük bir cache.
         private static FieldMap? _current;
         private static readonly object _lock = new();
 
-        /// <summary>
-        /// Varsayılan konumdan (./config/fieldmap.json) veya verilen path’ten yükler.
-        /// </summary>
+        /// verilen pathten yükler
         public static FieldMap Load(string? jsonPath = null)
         {
             var baseDir = AppContext.BaseDirectory;
@@ -44,7 +42,7 @@ namespace Muavin.Xml.Util
 
             var json = File.ReadAllText(path);
 
-            // Anahtarları büyük/küçük harf duyarsız sözlükte tutalım
+            // anahtarları büyük/küçük harf duyarsız sözlükte tut
             var raw = JsonSerializer.Deserialize<Dictionary<string, string[]>>(
                 json,
                 new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip }
@@ -57,13 +55,13 @@ namespace Muavin.Xml.Util
             {
                 var inputList = kv.Value ?? Array.Empty<string>();
 
-                // 1) Yer tutucuları genişlet
+                // yer tutucuları genişlet
                 var withTokens = ExpandTokens(inputList);
 
-                // 2) Normalize et ve güvenli (#text) varyasyonlarını ekle
+                // normalize et ve güvenli (#text) varyasyonlarını ekle
                 var normalized = NormalizeAndAugment(withTokens);
 
-                // 3) Tekilleştir (Ordinal)
+                // Ordinal
                 var uniq = normalized.Distinct(StringComparer.Ordinal).ToArray();
 
                 expanded[kv.Key] = uniq;
@@ -72,9 +70,7 @@ namespace Muavin.Xml.Util
             return new FieldMap(expanded);
         }
 
-        /// <summary>
-        /// İlk kez ihtiyaç olduğunda (./config/fieldmap.json) yükleyip cache’ler.
-        /// </summary>
+        /// ilk kez kullanıldığında yükleyip cache’ler
         public static FieldMap Current
         {
             get
@@ -88,16 +84,14 @@ namespace Muavin.Xml.Util
             }
         }
 
-        /// <summary>
-        /// Anahtar için tüm XPath adaylarını döndürür; yoksa boş dizi döner.
-        /// </summary>
+        /// anahtar için tüm XPath adaylarını döndürür yoksa boş dizi döner
         public IReadOnlyList<string> Get(string key) =>
             _map.TryGetValue(key, out var arr) ? arr : Array.Empty<string>();
 
         // ---------------- internals ----------------
 
         /// <summary>
-        /// fieldmap.json’daki yer tutucuları genişletir:
+        /// fieldmap.json yer tutucuları genişletir:
         ///  - (ROOT)           => “defter” ve “edefter”
         ///  - (defter|edefter) => “defter” ve “edefter”
         /// </summary>
@@ -130,9 +124,9 @@ namespace Muavin.Xml.Util
         }
 
         /// <summary>
-        /// - Yol parçalarını normalize eder (PathNormalizer.Normalize).
-        /// - Element yollarına “/#text” varyasyonu ekler (atribüt yoluna dokunmaz).
-        /// - Boş/Geçersiz yolları atar.
+        /// - PathNormalizer.Normalize
+        /// - element yollarına “/#text” varyasyonu ekler attributte yoluna dokunmaz
+        /// - boş yolları atar
         /// </summary>
         private static IEnumerable<string> NormalizeAndAugment(IEnumerable<string> paths)
         {
@@ -143,16 +137,16 @@ namespace Muavin.Xml.Util
                 var norm = PathNormalizer.Normalize(raw);
                 if (string.IsNullOrEmpty(norm)) continue;
 
-                // Her zaman normalize edilmiş yol
+                // her zaman normalize edilmiş yol
                 yield return norm;
 
-                // Atribüt içeriyorsa (#text eklemiyoruz)
+                // attribute içeriyorsa (#text eklemiyoruz)
                 var hasAttribute = norm.Contains("/@", StringComparison.Ordinal);
 
-                // Zaten #text ile bitiyorsa gerek yok
+                // zaten #text ile bitiyorsa gerek yok
                 var endsWithText = norm.EndsWith("/#text", StringComparison.Ordinal);
 
-                // Element yolu ise güvenli olması için #text varyasyonu da ekleyelim
+                // element yolu ise güvenli olması için #text varyasyonu da ekleyelim
                 if (!hasAttribute && !endsWithText)
                 {
                     yield return norm + "/#text";
