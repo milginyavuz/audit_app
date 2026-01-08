@@ -36,12 +36,12 @@ namespace Muavin.Desktop.ViewModels
         [ObservableProperty]
         private MuavinRow? _selectedRow;
 
-        // ========= MANUEL FİŞ TÜRÜ (UI seçimi) =========
-        // UI'dan bind edeceksin (ComboBox SelectedItem vs)
+        // MANUEL FİŞ TÜRÜ ui seçimi
+        // ui binding 
         [ObservableProperty]
         private string? _selectedFisTuru;
 
-        // Kullanıcı tarafından manuel değiştirilen groupKey seti (Kaydet için)
+        // manuel değiştirilen groupKey seti kaydet için
         private readonly HashSet<string> _dirtyFisTypeGroupKeys = new(StringComparer.Ordinal);
 
         public FilterViewModel Filters { get; } = new();
@@ -87,7 +87,7 @@ namespace Muavin.Desktop.ViewModels
             await LoadFromDatabaseAsync();
         }
 
-        // ================== DB'den yükle (SEÇİLİ BAĞLAM) =====================
+        // ================== DBden yükle (SEÇİLİ BAĞLAM) =====================
         [RelayCommand]
         private async Task LoadFromDatabaseAsync()
         {
@@ -102,11 +102,11 @@ namespace Muavin.Desktop.ViewModels
                 IsBusy = true;
                 StatusText = $"{_context.Display} verileri yükleniyor…";
 
-                // 1) satırları çek
+                // satırları çek
                 var rows = await _dbRepo.GetRowsAsync(_context.CompanyCode!, _context.Year);
 
-                // 2) override'ları çek ve uygula (fis türü)
-                //    override tablosu: company+year+group_key -> fis_turu
+                // override'ları çek ve uygula (fis türü)
+                // override tablosu company+year+group_key -> fis_turu
                 var overrides = await _dbRepo.GetFisTypeOverridesAsync(_context.CompanyCode!, _context.Year);
                 if (overrides.Count > 0)
                 {
@@ -162,9 +162,9 @@ namespace Muavin.Desktop.ViewModels
             }
         }
 
-        // ================== MANUEL FİŞ TÜRÜ: UYGULA (EKRAN) =====================
-        // UI tarafında: seçili satır(lar) üzerinden çalışmak istersen
-        // şimdilik SelectedRow üzerinden yapıyoruz.
+        // ================== MANUEL FİŞ TÜRÜ UYGULA =====================
+        // ui tarafında seçili satırlar üzerinden çalışmak istenirse
+        // şimdilik SelectedRow üzerinden yapıyoruz
         [RelayCommand]
         private void ApplySelectedFisTuruToSelection()
         {
@@ -188,16 +188,16 @@ namespace Muavin.Desktop.ViewModels
                 return;
             }
 
-            // groupKey yoksa üret (DB/KeyFor ile uyumlu)
+            // groupKey yoksa üret DB ve KeyFor ile uyumlu
             if (string.IsNullOrWhiteSpace(row.GroupKey))
                 row.GroupKey = BuildGroupKey(row);
 
-            // Aynı fişe ait tüm satırlara uygula (groupKey bazlı)
+            // aynı fişe ait tüm satırlara uygula groupKey bazlı
             var gk = row.GroupKey!;
             foreach (var r in _allRows.Where(x => string.Equals(x.GroupKey, gk, StringComparison.Ordinal)))
                 r.FisTuru = ft;
 
-            // dirty set'e ekle
+            // dirty sete ekle
             _dirtyFisTypeGroupKeys.Add(gk);
 
             // ekrandaki filtre görünümü etkilenmiş olabilir (Exclude Açılış/Kapanış)
@@ -207,7 +207,7 @@ namespace Muavin.Desktop.ViewModels
             StatusText = $"Manuel fiş türü uygulandı: {ft} (Kaydetmek için 'Kaydet' butonuna bas)";
         }
 
-        // ================== MANUEL FİŞ TÜRÜ: KAYDET (DB) =====================
+        // ================== MANUEL FİŞ TÜRÜ: KAYDET DB =====================
         [RelayCommand]
         private async Task SaveFisTuruOverridesToDbAsync()
         {
@@ -261,7 +261,7 @@ namespace Muavin.Desktop.ViewModels
             }
         }
 
-        // ================== Dosya/Klasör Seç (PREVIEW) =====================
+        // ================== Dosya/Klasör Seç PREVIEW =====================
         [RelayCommand]
         private async Task Pick()
         {
@@ -306,7 +306,7 @@ namespace Muavin.Desktop.ViewModels
                 var logPath = Path.Combine(AppContext.BaseDirectory, "debug.txt");
                 Logger.Init(logPath, overwrite: true);
 
-                FieldMap.Load(); // XML için
+                FieldMap.Load(); // xml için
 
                 var (files, temps) = ExpandToDataFilesWithTemps(_selectedInputs);
                 tempDirs = temps;
@@ -344,7 +344,7 @@ namespace Muavin.Desktop.ViewModels
                         list = parsed?.ToList() ?? new List<MuavinRow>();
                     }
 
-                    // groupKey üret (manuel işlemler için)
+                    // groupKey üret manuel işlemler için
                     foreach (var r in list)
                         if (string.IsNullOrWhiteSpace(r.GroupKey))
                             r.GroupKey = BuildGroupKey(r);
