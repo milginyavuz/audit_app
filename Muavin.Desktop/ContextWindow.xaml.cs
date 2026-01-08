@@ -19,7 +19,7 @@ namespace Muavin.Desktop
 
         private readonly EdefterParser _edefterParser = new();
 
-        // KeyBinding hatası için: XAML Command binding’leri buraya bakacak
+        // Keybinding hatası için xaml Command bindingleri buraya bakacak
         public ICommand OkCommand { get; }
         public ICommand ExitCommand { get; }
 
@@ -127,7 +127,7 @@ namespace Muavin.Desktop
             Close();
         }
 
-        // ===================== YENİ ŞİRKET (XML/ZIP/TXT) =====================
+        // YENİ ŞİRKET (XML/ZIP/TXT)
         private async void AddCompanyFromEdefterClicked(object sender, RoutedEventArgs e)
         {
             ErrorText = "";
@@ -157,7 +157,7 @@ namespace Muavin.Desktop
 
                 if (ext == ".txt")
                 {
-                    // TXT’den sadece VKN çıkar
+                    // txtden sadece VKN çıkar
                     var info = TryParseCompanyFromTxt(picked);
                     taxId = info.taxId;
 
@@ -167,7 +167,7 @@ namespace Muavin.Desktop
                         return;
                     }
 
-                    // Ünvan manuel girilecek
+                    // ünvan manuel girilecek
                     var manualName = Microsoft.VisualBasic.Interaction.InputBox(
                         $"VKN: {taxId}\nŞirket adını girin:",
                         "Şirket Adı",
@@ -177,7 +177,7 @@ namespace Muavin.Desktop
                 }
                 else
                 {
-                    // XML veya ZIP -> XML çöz, sonra ParseCompanyInfo
+                    // xml veya zip -> xml çöz sonra ParseCompanyInfo
                     var xmlPath = ResolveAnyXml(picked);
                     if (xmlPath == null)
                     {
@@ -187,7 +187,7 @@ namespace Muavin.Desktop
 
                     var info = _edefterParser.ParseCompanyInfo(xmlPath);
 
-                    // ParseCompanyInfo record alanları: TaxId + EntityName (senin kullanımına göre)
+                    // ParseCompanyInfo record alanları  TaxId + EntityName 
                     taxId = (info.TaxId ?? "").Trim();
                     title = (info.EntityName ?? "").Trim();
                 }
@@ -201,10 +201,10 @@ namespace Muavin.Desktop
                 if (string.IsNullOrWhiteSpace(title))
                     title = taxId; // fallback
 
-                // DB’ye yaz (muavin.company)
+                // dbye yaz (muavin.company)
                 await _repo.EnsureCompanyAsync(taxId, title);
 
-                // Listeyi yenile ve yeni şirketi seç
+                // listeyi yenile ve yeni şirketi seç
                 await LoadCompaniesAsync();
                 cbCompany.SelectedValue = taxId;
 
@@ -244,13 +244,13 @@ namespace Muavin.Desktop
             return null;
         }
 
-        // ---------------- TXT -> Company (heuristic) ----------------
+        // TXT -> company (heuristic) 
 
-        // VKN: 10 haneli sayı (TR VKN)
+        // VKN 10 haneli sayı
         private static readonly Regex RxVkn =
             new Regex(@"\b(\d{10})\b", RegexOptions.Compiled);
 
-        // Ünvan yakalamaya çalış: "UNVAN: ..." / "ÜNVAN: ..." / "FIRMA: ..." gibi
+        // ünvan yakalama
         private static readonly Regex RxTitleLine =
             new Regex(@"(?im)^(?:\s*(?:unvan|ünvan|firma|şirket|company)\s*[:\-]\s*)(.+)\s*$",
                       RegexOptions.Compiled);
@@ -276,18 +276,18 @@ namespace Muavin.Desktop
             if (mTitle.Success)
                 title = mTitle.Groups[1].Value.Trim();
 
-            // tax id (VKN)
+            // tax id = VKN
             string? taxId = null;
             var mVkn = RxVkn.Match(text);
             if (mVkn.Success)
                 taxId = mVkn.Groups[1].Value.Trim();
 
-            // Aşırı “rastgele” 10 hane yakalama riskini azaltmak için:
-            // Eğer metinde "VKN" / "Vergi" / "Tax" vb. varsa ilk eşleşmeyi alıyoruz,
-            // yoksa yine de eşleşme varsa alıyoruz (sende format değişebilir).
+            // rastgele 10 hane yakalama riskini azaltmak için
+            // eğer metinde VKN, Vergi, Tax vb varsa ilk eşleşmeyi alıyoruz
+            // yoksa yine de eşleşme varsa alıyoruz
             if (!string.IsNullOrWhiteSpace(taxId))
             {
-                // 0000... gibi gelirse temizle
+                // 0000 gibi gelirse temizle
                 taxId = taxId.TrimStart('0');
                 if (taxId.Length == 0) taxId = null;
             }
@@ -295,7 +295,7 @@ namespace Muavin.Desktop
             return (taxId, title);
         }
 
-        // Mini ICommand helper (MVVM toolkit kullanmadan)
+        // mini icommand helper mvvm toolkit kullanmadan
         private sealed class RelayCommand : ICommand
         {
             private readonly Action _execute;
