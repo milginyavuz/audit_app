@@ -10,8 +10,8 @@ using System.Reflection.Metadata.Ecma335;
 namespace Muavin.Xml.Util
 {
     /// <summary> 
-    /// Tek dosyaya thread-safe debug log yazar.
-    /// Etiketli satırlar: RUN, PARSE, ROWS, HIT/HDR, HIT/DET, MISS, INFO, ERROR
+    ///  thread-safe debug log yazar
+    /// etiketli satırlar: RUN, PARSE, ROWS, HIT/HDR, HIT/DET, MISS, INFO, ERROR
     /// </summary>
 
     public static class Logger
@@ -20,13 +20,13 @@ namespace Muavin.Xml.Util
         private static StreamWriter? _sw;
         private static bool _initialized;
 
-        ///Tek dosyada gürültüyü azaltmak için isteğe bağlu "aynı satırı bir kere yaz" önbellekleri:
+        ///  gürültüyü azaltmak için isteğe bağlı önbellekler:
         private static readonly HashSet<string> _missCache = new(StringComparer.Ordinal);
         private static readonly HashSet<string> _hitHdrCache = new(StringComparer.Ordinal);
         private static readonly HashSet<string> _hitDetCache = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// Örn: Init(@"C:\out\debug.txt", overwrite:true)
+        /// örn: Init(@"C:\out\debug.txt", overwrite:true)
         /// </summary>
         public static void Init(string path, bool overwrite = true)
         {
@@ -47,31 +47,19 @@ namespace Muavin.Xml.Util
             }
         }
 
-        /// <summary>
-        ///Serbest metin satırı yazar (etiket yok) 
-        /// </summary>
         
         public static void WriteLine(string message) => WriteLineRaw(message);
 
-        /// <summary>
-        /// Basit bilgi satırı
-        /// </summary>
         public static void Info(string message) => WriteTagged("INFO", message);
 
-        /// <summary>
-        /// Hata satırı
-        /// </summary>
         public static void Error(string message) => WriteTagged("ERROR" ,message);
 
-        /// <summary>
-        /// Koşu/çalıştırma başlıkları
-        /// </summary>
         public static void Run(string message) => WriteTagged("RUN" ,message);
         public static void Parse(string message) => WriteTagged("PARSE", message);
         public static void Rows(string message) => WriteTagged("ROWS", message);
 
         /// <summary>
-        /// Header tarafında eşleşen path
+        /// header tarafında eşleşen path
         /// </summary>
         public static void HitHeader(string path)
         {
@@ -80,7 +68,7 @@ namespace Muavin.Xml.Util
         }
 
         /// <summary>
-        /// Detail tarafında eşleşen path
+        /// detail tarafında eşleşen path
         /// </summary>
         
         public static void HitDetail(string path)
@@ -90,7 +78,7 @@ namespace Muavin.Xml.Util
         }
 
         /// <summary>
-        /// Eşleşmeyen path
+        /// eşleşmeyen path
         /// </summary>
         public static void Miss(string path)
         {
