@@ -12,15 +12,15 @@ namespace Muavin.Xml.Parsing
     public static class PostProcessors
     {
         /// <summary>
-        /// Aynı fişte (EntryNumber+Tarih [+Belge]) bulunan hareketler için "Karşı Hesap" alanını doldurur.
-        /// Hızlı sürüm: grup bazında kebir setlerini 1 kez hesaplar, stringleri cache'ler.
-        /// alsoAccountCodes=true ise ayrıca ContraHesapCsv (hesap kodları) ve ContraKebirCsv de doldurur.
+        /// aynı fişte (EntryNumber+Tarih [+Belge]) bulunan hareketler için Karşı Hesap doldurur
+        /// hızlı sürüm: grup bazında kebir setlerini 1 kez hesaplar stringleri cacheler
+        /// alsoAccountCodes=true ise ayrıca ContraHesapCsv (hesap kodları) ve ContraKebirCsv de doldurur
         /// </summary>
         public static void FillContraAccounts(IList<MuavinRow> rows, bool alsoAccountCodes = false)
         {
             if (rows is null || rows.Count == 0) return;
 
-            // 1) Önce group key ve taraf (D/C)
+            // önce group key ve taraf (D/C)
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
@@ -28,7 +28,7 @@ namespace Muavin.Xml.Parsing
                 r.GroupKey = BuildGroupKey(r);
             }
 
-            // 2) Grup (fiş) bazında çalış
+            // grup (fiş) bazında 
             // Dictionary<groupKey, list indices> – index listesi kopya oluşturmayı azaltır
             var groups = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             for (int i = 0; i < rows.Count; i++)
@@ -42,7 +42,7 @@ namespace Muavin.Xml.Parsing
                 list.Add(i);
             }
 
-            // 3) Her grupta kebir setlerini 1 kez çıkar ve cache'li stringlerden yaz
+            // her grupta kebir setlerini 1 kez çıkarıp cacheli stringlerden yazar
             foreach (var kv in groups)
             {
                 var idxs = kv.Value;
@@ -51,7 +51,7 @@ namespace Muavin.Xml.Parsing
                 var debKebirSet = new HashSet<string>(StringComparer.Ordinal);
                 var crdKebirSet = new HashSet<string>(StringComparer.Ordinal);
 
-                // (isteğe bağlı) hesap kodu setleri
+                // hesap kodu setleri
                 HashSet<string>? debCodeSet = alsoAccountCodes ? new HashSet<string>(StringComparer.Ordinal) : null;
                 HashSet<string>? crdCodeSet = alsoAccountCodes ? new HashSet<string>(StringComparer.Ordinal) : null;
 
@@ -74,7 +74,7 @@ namespace Muavin.Xml.Parsing
                     }
                 }
 
-                // Sıralı listeler
+                // sıralı listeler
                 static string JoinSorted(HashSet<string> hs, string sep)
                 {
                     if (hs.Count == 0) return string.Empty;
@@ -83,20 +83,20 @@ namespace Muavin.Xml.Parsing
                     return string.Join(sep, arr);
                 }
 
-                // Taban stringler (tam set)
+                // taban stringler (tam set)
                 var crdKebirAll = JoinSorted(crdKebirSet, " | ");
                 var debKebirAll = JoinSorted(debKebirSet, " | ");
 
-                // "kebir çıkarılmış" durumlar için küçük cache:
-                // ör: grupta hem borçta hem alacakta aynı kebir varsa, kendi kebirini hariç bırakmak gerekir.
+                // kebir çıkarılmış durumlar için küçük cache
+                // grupta hem borçta hem alacakta aynı kebir varsa kendi kebirini hariç bırakmak gerekiyor
                 var crdMinusCache = new Dictionary<string, string>(StringComparer.Ordinal);
                 var debMinusCache = new Dictionary<string, string>(StringComparer.Ordinal);
 
                 string BuildMinusString(HashSet<string> src, string mine)
                 {
-                    // mine set'te yoksa doğrudan tam string dönebiliriz
+                    // mine sette yoksa doğrudan tam string dönebiliriz
                     if (!src.Contains(mine)) return JoinSorted(src, " | ");
-                    // varsa 1 kez hesaplayıp cache’leyelim
+                    // varsa 1 kez hesaplayıp cachele
                     var key = mine;
                     var dict = ReferenceEquals(src, crdKebirSet) ? crdMinusCache : debMinusCache;
                     if (dict.TryGetValue(key, out var cached)) return cached;
@@ -116,7 +116,7 @@ namespace Muavin.Xml.Parsing
                     return result;
                 }
 
-                // (isteğe bağlı) hesap kodları için de taban/join cache
+                //  hesap kodları için de taban/join cache
                 string? crdCodeAll = null, debCodeAll = null;
                 Dictionary<string, string>? crdCodeMinusCache = null, debCodeMinusCache = null;
                 if (alsoAccountCodes)
@@ -146,7 +146,7 @@ namespace Muavin.Xml.Parsing
                     return result;
                 }
 
-                // Son olarak grup üyelerine yaz
+                // grup üyelerine yazılır
                 foreach (var i in idxs)
                 {
                     var r = rows[i];
@@ -155,15 +155,15 @@ namespace Muavin.Xml.Parsing
 
                     if (r.Side == "D")
                     {
-                        // Borç satırları için karşı taraf: ALACAK kebir seti
-                        r.KarsiHesap = BuildMinusString(crdKebirSet, myKebir); // kebir bazlı, " | " ile
-                        r.ContraKebirCsv = r.KarsiHesap?.Replace(" | ", ","); // CSV istersen
+                        // borç satırları için karşı taraf alacak kebir seti
+                        r.KarsiHesap = BuildMinusString(crdKebirSet, myKebir); // kebir bazlı
+                        r.ContraKebirCsv = r.KarsiHesap?.Replace(" | ", ","); // csv için
                         if (alsoAccountCodes)
                             r.ContraHesapCsv = BuildMinusCodes(crdCodeSet!, myCode, isCreditSide: true);
                     }
                     else if (r.Side == "C")
                     {
-                        // Alacak satırları için karşı taraf: BORÇ kebir seti
+                        // alacak satırları için karşı taraf borç kebir seti
                         r.KarsiHesap = BuildMinusString(debKebirSet, myKebir);
                         r.ContraKebirCsv = r.KarsiHesap?.Replace(" | ", ",");
                         if (alsoAccountCodes)
@@ -171,7 +171,7 @@ namespace Muavin.Xml.Parsing
                     }
                     else
                     {
-                        // Yönsüz satırlar için iki tarafın birleşimini (kebir) göster
+                        // yönsüz satırlar için iki tarafın birleşimini kebirini göster
                         if (debKebirSet.Count == 0 && crdKebirSet.Count == 0)
                         {
                             r.KarsiHesap = string.Empty;
@@ -180,7 +180,7 @@ namespace Muavin.Xml.Parsing
                         }
                         else
                         {
-                            // Birleşim (kendi kebirini yine hariç bırakalım)
+                            // birleşim kendi kebirini yine hariç
                             var union = new HashSet<string>(debKebirSet, StringComparer.Ordinal);
                             foreach (var s in crdKebirSet) union.Add(s);
                             r.KarsiHesap = BuildMinusString(union, myKebir);
@@ -207,8 +207,8 @@ namespace Muavin.Xml.Parsing
         }
 
         /// <summary>
-        /// Aynı fişe ait hareketleri aynı anahtar altında toplar.
-        /// Açılış/Kapanış fişlerinde belge no katılmaz; diğerlerinde no+tarih+belge ile ayırmaya çalışırız.
+        /// aynı fişe ait hareketleri aynı anahtar altında toplar
+        /// açılış/kapanış fişlerinde belge no katılmaz diğerlerinde no+tarih+belge ile ayırmaya çalışırız
         /// </summary>
         private static string BuildGroupKey(MuavinRow r)
         {
