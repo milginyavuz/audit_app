@@ -26,13 +26,13 @@ namespace Muavin.Desktop.ViewModels
 
         public AgingViewModel(IEnumerable<MuavinRow> rows)
         {
-            // MUAVİNDEKİ SIRAYI BOZMADAN alıyoruz.
-            // XML'den gelen muavin zaten tarih / fiş sırasına göre.
+            // muavindeki sırayı bozmadan al
+            // xmlden gelen muavin zaten tarih / fiş sırasına göre
             _source = rows
                 .Where(r => r.PostingDate.HasValue)
                 .ToList();
 
-            // Varsayılan yaşlandırma tarihi: verideki son fiş tarihinin 31.12'si
+            // varsayılan yaşlandırma tarihi verideki son fiş tarihini 31.12.xxxx
             if (_source.Any())
             {
                 var maxDate = _source.Max(r => r.PostingDate)!.Value;
@@ -44,7 +44,7 @@ namespace Muavin.Desktop.ViewModels
             }
         }
 
-        // Kapanış fişlerini hariç tut (açılışlar dahil)
+        // kapanış fişlerini hariç tut (açılışlar dahil)
         private static bool IsClosingEntry(MuavinRow r)
         {
             var aciklama = r.Aciklama ?? string.Empty;
@@ -52,7 +52,7 @@ namespace Muavin.Desktop.ViewModels
                 || aciklama.Contains("kapanis", StringComparison.OrdinalIgnoreCase);
         }
 
-        // Açılış fişlerini tespit et – 331-365 gün aralığına değil, ayrı "Açılış" kolonuna gidecek
+        // açılış fişlerini tespit et 331-365 gün aralığına değil ayrı açılış kolonuna gider
         private static bool IsOpeningEntry(MuavinRow r)
         {
             var aciklama = r.Aciklama ?? string.Empty;
@@ -60,7 +60,7 @@ namespace Muavin.Desktop.ViewModels
                 || aciklama.Contains("acilis", StringComparison.OrdinalIgnoreCase);
         }
 
-        // ---------------- Komut: Yaşlandır ----------------
+        //  Yaşlandır
 
         [RelayCommand]
         private void Age()
@@ -73,11 +73,11 @@ namespace Muavin.Desktop.ViewModels
 
             DateTime curDate = AgingDate.Value.Date;
 
-            // 1) Temel filtre: kapanış fişleri hariç, yaşlandırma tarihine kadar olan hareketler
+            // temel filtrekapanış fişleri hariç yaşlandırma tarihine kadar olan hareketler
             var q = _source
                 .Where(r => !IsClosingEntry(r) && r.PostingDate <= curDate);
 
-            // Kebir aralığı filtresi
+            // kebir aralığı filtresi
             if (!string.IsNullOrWhiteSpace(KebirBas) || !string.IsNullOrWhiteSpace(KebirBit))
             {
                 int? kb = int.TryParse(KebirBas, out var k1) ? k1 : null;
@@ -94,7 +94,7 @@ namespace Muavin.Desktop.ViewModels
                 });
             }
 
-            // Hesap kodu filtresi (tek kod ya da virgülle çoklu)
+            // hesap kodu filtresi tek kod ya da virgülle çoklu
             if (!string.IsNullOrWhiteSpace(HesapKodu))
             {
                 var parts = HesapKodu!
@@ -106,13 +106,13 @@ namespace Muavin.Desktop.ViewModels
                                  parts.Any(p => r.HesapKodu.StartsWith(p, StringComparison.Ordinal)));
             }
 
-            // filtered: MUAVİN SIRASINI KORUYAN liste (summary için bunu kullanacağız)
+            // filteredmuavin sırasıyla liste summary için bunu kullanacağız
             var filtered = q.ToList();
 
             if (!filtered.Any())
                 return;
 
-            // 2) Detay grid: ekranda daha düzgün görünmesi için HesapKodu + Tarih sırasıyla
+            // detay grid ekranda daha düzgün görünmesi için HesapKodu + Tarih sırasıyla
             var orderedForDetail = filtered
                 .OrderBy(r => r.HesapKodu)
                 .ThenBy(r => r.PostingDate);
@@ -137,15 +137,14 @@ namespace Muavin.Desktop.ViewModels
                 }
             }
 
-            // 3) Özet grid: Excel makrosuna göre LIFO yaşlandırma
-            // Burada MUAVİN SIRASI ile gelen "filtered" listesine göre çalışıyoruz.
+            // özet grid LIFO yaşlandırma filtered listesine göre
             var reports = ExcelAgingCalculator.Calculate(filtered, curDate);
 
             foreach (var row in reports)
                 ReportRows.Add(row);
         }
 
-        // ---------------- DTO sınıfları ----------------
+        // DTO sınıfları
 
         public class AgingDetailRow
         {
@@ -157,7 +156,7 @@ namespace Muavin.Desktop.ViewModels
             public decimal Bakiye { get; set; }
         }
 
-        // Excel yaşlandırma raporundaki satırın birebir karşılığı
+       
         public class AgingReportRow
         {
             public string HesapKodu { get; set; } = string.Empty;
@@ -176,7 +175,7 @@ namespace Muavin.Desktop.ViewModels
             public decimal Gun_301_330 { get; set; }
             public decimal Gun_331_365 { get; set; }
 
-            // Açılış fişinden gelen bakiye
+            // açılış fişinden gelen bakiye
             public decimal Gun_Acilis { get; set; }
 
             public decimal Gun_365Ustu { get; set; }
@@ -184,11 +183,11 @@ namespace Muavin.Desktop.ViewModels
             public decimal Bakiye { get; set; }
         }
 
-        // ---------------- Excel makrosu ile aynı LIFO mantığı ----------------
+        // LIFO mantığı
 
         private static class ExcelAgingCalculator
         {
-            // Gün sınırları (0-30, 31-60, ... 331-365)
+            // gün sınırları 
             private static readonly int[] Limits =
             {
                 30,   // 0-30
@@ -209,7 +208,7 @@ namespace Muavin.Desktop.ViewModels
             {
                 var result = new List<AgingReportRow>();
 
-                // Hesap koduna göre grupla, ama HER grubun içindeki sıra muavindeki gibi kalsın
+                // hesap koduna göre grupla ama her grubun içindeki sıra muavindeki gibi kalsın
                 foreach (var accountGroup in source
                              .GroupBy(r => r.HesapKodu)
                              .Where(g => !string.IsNullOrEmpty(g.Key)))
@@ -220,15 +219,15 @@ namespace Muavin.Desktop.ViewModels
 
                     var last = rows.Last();
 
-                    // Excel makrosu gibi SON SATIRIN BAKİYE’sini esas al
-                    // MuavinRow.RunningBalance = muavindeki "Bakiye" kolonu
+                    //  son satırın bakiyesini al
+                    // MuavinRow.RunningBalance = muavindeki Bakiye kolonu
                     decimal netBalance = last.RunningBalance;
 
                     if (netBalance == 0)
                         continue;
 
-                    bool isDebit = netBalance > 0;              // Borç bakiye mi?
-                    decimal remaining = Math.Abs(netBalance);   // Dağıtılacak bakiye (her zaman +)
+                    bool isDebit = netBalance > 0;              // borç bakiye mi?
+                    decimal remaining = Math.Abs(netBalance);   // dağıtılacak bakiye (her zaman +)
 
                     var report = new AgingReportRow
                     {
@@ -238,14 +237,14 @@ namespace Muavin.Desktop.ViewModels
                         Bakiye = remaining
                     };
 
-                    // LIFO: muavindeki sıranın TERSİNDEN yürü
+                    // LIFO muavindeki sıranın tersinden yürü
                     foreach (var row in rows.AsEnumerable().Reverse())
                     {
                         if (remaining <= 0)
                             break;
 
-                        // Hesabın bakiyesi borç ise sadece BORÇ kolonunu,
-                        // alacak ise sadece ALACAK kolonunu kullan.
+                        // hesabın bakiyesi borç ise sadece borç kolonunu
+                        // alacak ise sadece alacak kolonunu 
                         decimal hareketTutar = isDebit ? row.Borc : row.Alacak;
                         if (hareketTutar <= 0)
                             continue;
@@ -254,7 +253,7 @@ namespace Muavin.Desktop.ViewModels
                         if (pay <= 0)
                             continue;
 
-                        // AÇILIŞ FİŞİ ise gün aralığına değil, "Açılış" kolonuna yaz
+                        // açılış fişi ise gün aralığına değil Açılış kolonuna yaz
                         if (IsOpeningEntry(row))
                         {
                             report.Gun_Acilis += pay;
@@ -265,14 +264,14 @@ namespace Muavin.Desktop.ViewModels
                         int days = (agingDate.Date - row.PostingDate!.Value.Date).Days;
                         if (days < 0) days = 0;
 
-                        // Gün aralığını (bucket) bul
+                        // bucket bul
                         int bucketIndex = 0;
                         while (bucketIndex < Limits.Length && days > Limits[bucketIndex])
                             bucketIndex++;
 
-                        remaining -= pay;          // Kalan bakiye azalıyor
+                        remaining -= pay;          // kalan bakiye azalıyor
 
-                        // Tutarı ilgili gün kolonuna ekle – HER ZAMAN POZİTİF
+                        // tutarı gün kolonuna ekle HER ZAMAN POZİTİF
                         switch (bucketIndex)
                         {
                             case 0: report.Gun_0_30 += pay; break;
