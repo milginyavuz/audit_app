@@ -54,7 +54,7 @@ namespace Muavin.Desktop.ViewModels
                 EndDate = new DateTime(DateTime.Today.Year, 12, 31);
             }
 
-            // ✅ Pencere açılınca otomatik hesapla
+            // pencere açılınca otomatik hesapla
             Hesapla();
         }
 
