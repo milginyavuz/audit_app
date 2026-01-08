@@ -21,8 +21,8 @@ public sealed class PathLister
     private static readonly StringComparer Ord = StringComparer.Ordinal;
 
     /// <summary>
-    /// Tek bir XML, bir klasör (tüm alt klasörler) veya bir ZIP ver.
-    /// Tüm dosyalardaki yol istatistiklerini birleştirip benzersiz ve sıralı yol listelerini döndürür.
+    /// tek bir xml bir klasör (tüm alt klasörler) veya bir ZIP ver
+    /// tüm dosyalardaki yol istatistiklerini birleştirip benzersiz ve sıralı yol listelerini döndürür
     /// </summary>
     public PathListResult ListPaths(string input)
     {
@@ -39,7 +39,7 @@ public sealed class PathLister
             Merge(merged, stats);
         }
 
-        // Benzersiz yolları türlerine göre ayır
+        // benzersiz yolları türlerine göre ayır
         var elements = new HashSet<string>(Ord);
         var attributes = new HashSet<string>(Ord);
         var texts = new HashSet<string>(Ord);
@@ -56,7 +56,7 @@ public sealed class PathLister
             }
         }
 
-        // Sıralama: önce derinlik (kaç “/”), sonra sözlük (stabil)
+        // sıralama önce derinlik (kaç “/”) sonra sözlük (stabil)
         static IEnumerable<string> SortPaths(IEnumerable<string> src)
             => src.OrderBy(p => p.Count(c => c == '/')).ThenBy(p => p, Ord);
 
@@ -70,7 +70,7 @@ public sealed class PathLister
         };
     }
 
-    /// <summary> Listeyi .txt dosyalarına yazar (hepsi opsiyoneldir; null geçebilirsin). </summary>
+    /// <summary> listeyi .txt dosyalarına yazar (hepsi opsiyonel null geçebilir) </summary>
     public void WriteToFiles(PathListResult list,
                              string? allTxtPath = null,
                              string? elementsTxtPath = null,
@@ -93,7 +93,7 @@ public sealed class PathLister
 
     // ----------------- iç yardımcılar -----------------
 
-    // input'u dosya listesine genişlet (.xml | klasör | .zip)
+    // inputu dosya listesine genişlet (.xml  klasör  .zip)
     private static List<string> ExpandInput(string input)
     {
         var list = new List<string>();
@@ -124,7 +124,7 @@ public sealed class PathLister
         return list;
     }
 
-    // PathStats sözlüklerini birleştir (Count toplar, attribute adları birleşir, ilk 3 sample korunur)
+    // PathStats sözlüklerini birleştir (ilk 3 sample korunur)
     private static void Merge(Dictionary<string, PathStats> target, Dictionary<string, PathStats> add)
     {
         foreach (var (path, ps) in add)
