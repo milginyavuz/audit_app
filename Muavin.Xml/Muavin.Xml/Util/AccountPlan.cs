@@ -33,12 +33,12 @@ namespace Muavin.Desktop.Util
                 if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name))
                     continue;
 
-                // 1 hane (8,9) veya 3 hane (100..999)
+                // 1 hane (8,9) veya 3 hane (100-999)
                 if (code.Length == 1 || code.Length == 3)
                     _kebirNames[code] = name;
             }
 
-            // GARANTİ: 8 ve 9 başlıkları her durumda olsun
+            // 8 ve 9 başlıkları her durumda olsun
             if (!_kebirNames.ContainsKey("8")) _kebirNames["8"] = "Serbest Hesaplar";
             if (!_kebirNames.ContainsKey("9")) _kebirNames["9"] = "Nazım Hesaplar";
         }
