@@ -34,7 +34,7 @@
                            FontSize="20"
                            FontWeight="SemiBold"
                            Margin="0,0,0,6"/>
-                <TextBlock Text="Devam etmek için şirket ve yılı seçin. Yeni şirket eklemek için e-Defter XML/ZIP veya TXT seçebilirsiniz."
+                <TextBlock Text="Devam etmek için şirket ve yılı seçin. Yeni şirket eklemek için e-Defter XML/ZIP veya TXT seçebilirsiniz. Yeni dönem eklemek için şirketi seçip yıl ekleyebilirsiniz."
                            Foreground="#FF666666"
                            TextWrapping="Wrap"/>
             </StackPanel>
@@ -69,27 +69,39 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="Yıl" Margin="0,0,0,6"/>
                         <TextBox x:Name="tbYear"
-                                 Width="140"
-                                 Height="32"
-                                 Padding="10,3"
-                                 BorderBrush="#FFE6E6E6"
-                                 BorderThickness="1"
-                                 PreviewTextInput="Year_PreviewTextInput"/>
+                 Width="140"
+                 Height="32"
+                 Padding="10,3"
+                 BorderBrush="#FFE6E6E6"
+                 BorderThickness="1"
+                 PreviewTextInput="Year_PreviewTextInput"/>
                     </StackPanel>
 
-                    <TextBlock Grid.Column="2"
-                               VerticalAlignment="Bottom"
-                               Foreground="#FF888888"
-                               Text="Örn: 2024"
-                               Margin="0,0,0,6"/>
-                </Grid>
+                    <!-- Mini buton: yılları seç -->
+                    <Button Grid.Column="2"
+            Content="Yıllar"
+            Height="32"
+            MinWidth="70"
+            Margin="0,22,0,0"
+            Padding="10,3"
+            Click="PickYearClicked"
+            BorderBrush="#FFE6E6E6"
+            BorderThickness="1"/>
 
+                    <TextBlock Grid.Column="4"
+               VerticalAlignment="Bottom"
+               Foreground="#FF888888"
+               Text="Örn: 2024"
+               Margin="0,0,0,6"/>
+                </Grid>
                 <TextBlock Grid.Row="4"
                            Margin="0,6,0,0"
                            Foreground="#FFB00020"
@@ -103,6 +115,8 @@
             <!-- FOOTER BAR -->
             <Grid Grid.Row="3" Margin="0,14,0,0">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -118,8 +132,18 @@
                         BorderBrush="#FFE6E6E6"
                         BorderThickness="1"/>
 
+                <!-- Left bottom: New period/year -->
+                <Button Grid.Column="2"
+                        Content="Yeni Dönem (Yıl) Ekle"
+                        Height="30"
+                        MinWidth="190"
+                        Padding="12,6"
+                        Click="AddPeriodClicked"
+                        BorderBrush="#FFE6E6E6"
+                        BorderThickness="1"/>
+
                 <!-- Right bottom: Exit/Ok -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Çık"
                             Height="30"
                             Width="90"

@@ -54,6 +54,17 @@ namespace Muavin.Desktop
         {
         }
 
+        // ✅ EKLENECEK: Sağ tıkla tıklanan satırı seç (ContextMenu doğru çalışsın)
+        private void RowsGridRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is DataGridRow row)
+            {
+                row.IsSelected = true;
+                row.Focus();
+                e.Handled = false; // menü açılabilsin
+            }
+        }
+
         private void MizanButton_Click(object sender, RoutedEventArgs e)
         {
             var rows = RowsGrid.ItemsSource as IEnumerable<MuavinRow>;

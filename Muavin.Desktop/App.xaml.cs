@@ -1,4 +1,5 @@
-﻿using System;
+﻿// App.xaml.cs
+using System;
 using System.Configuration;
 using System.Globalization;
 using System.IO;
@@ -67,21 +68,28 @@ namespace Muavin.Desktop
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            base.OnStartup(e);
-
-            RegisterGlobalExceptionHandlers();
-            BootLog("OnStartup entered");
-
+            // ✅ TR kültürü en başta set edelim (tüm binding/formatlar bundan etkilensin)
             var culture = new CultureInfo("tr-TR");
+
+            // Default culture: yeni thread’ler için
             CultureInfo.DefaultThreadCurrentCulture = culture;
             CultureInfo.DefaultThreadCurrentUICulture = culture;
 
+            // Current thread: WPF startup thread için (bazı senaryolarda gerekli)
+            Thread.CurrentThread.CurrentCulture = culture;
+            Thread.CurrentThread.CurrentUICulture = culture;
+
+            // WPF binding/format dili
             FrameworkElement.LanguageProperty.OverrideMetadata(
                 typeof(FrameworkElement),
                 new FrameworkPropertyMetadata(
                     XmlLanguage.GetLanguage(culture.IetfLanguageTag)));
 
-            BootLog("Culture set");
+            base.OnStartup(e);
+
+            RegisterGlobalExceptionHandlers();
+            BootLog("OnStartup entered");
+            BootLog("Culture set: " + culture.Name);
 
             // Hesap planı
             try
@@ -130,6 +138,9 @@ namespace Muavin.Desktop
                 return;
             }
 
+
+
+
             // =====================
             // CONTEXT WINDOW
             // =====================
@@ -163,7 +174,5 @@ namespace Muavin.Desktop
 
             vm.LoadFromDatabaseCommand.Execute(null);
         }
-
-
     }
 }

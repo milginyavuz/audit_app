@@ -2,7 +2,7 @@
 <Window x:Class="Muavin.Desktop.AccountSummaryWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Hesap Özeti" Width="980" Height="620"
+        Title="Hesap Özeti" Width="1120" Height="620"
         WindowStartupLocation="CenterOwner">
     <DockPanel>
 
@@ -30,9 +30,13 @@
         </StackPanel>
 
         <!-- HESAP ÖZET TABLOSU -->
-        <DataGrid x:Name="grid" Margin="8" AutoGenerateColumns="False" IsReadOnly="True" ItemsSource="{Binding}">
+        <DataGrid x:Name="grid"
+                  Margin="8"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  ItemsSource="{Binding}">
             <DataGrid.Resources>
-                <!-- Sayısal alanları sağa hizala -->
                 <Style x:Key="RightAlign" TargetType="TextBlock">
                     <Setter Property="TextAlignment" Value="Right"/>
                 </Style>
@@ -47,18 +51,30 @@
                                     Binding="{Binding HesapAdi}"
                                     Width="*"/>
 
+                <!-- ✅ Yeni: Son Tarih -->
+                <DataGridTextColumn Header="Son Tarih"
+                                    Binding="{Binding LastDate, StringFormat={}{0:dd.MM.yyyy}}"
+                                    Width="120"/>
+
                 <DataGridTextColumn Header="Toplam Borç"
-                                    Binding="{Binding Borc, StringFormat=N2}"
+                                    Binding="{Binding Borc, StringFormat={}{0:N2}}"
                                     Width="150"
                                     ElementStyle="{StaticResource RightAlign}"/>
 
                 <DataGridTextColumn Header="Toplam Alacak"
-                                    Binding="{Binding Alacak, StringFormat=N2}"
+                                    Binding="{Binding Alacak, StringFormat={}{0:N2}}"
                                     Width="150"
                                     ElementStyle="{StaticResource RightAlign}"/>
 
+                <!-- ✅ Yeni: Son Bakiye (RunningBalance) -->
+                <DataGridTextColumn Header="Son Bakiye"
+                                    Binding="{Binding LastRunningBalance, StringFormat={}{0:N2}}"
+                                    Width="160"
+                                    ElementStyle="{StaticResource RightAlign}"/>
+
+                <!-- Eski kolon kalsın istiyorsan kalsın: -->
                 <DataGridTextColumn Header="Toplam Bakiye"
-                                    Binding="{Binding Bakiye, StringFormat=N2}"
+                                    Binding="{Binding Bakiye, StringFormat={}{0:N2}}"
                                     Width="150"
                                     ElementStyle="{StaticResource RightAlign}"/>
             </DataGrid.Columns>

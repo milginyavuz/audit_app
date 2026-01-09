@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Muavin.Xml\Muavin.Xml\Muavin.Xml.csproj" />
+    <ProjectReference Include="..\Muavin.Xml\Muavin.Xml\Muavin.Xml.csproj" />
   </ItemGroup>
 
 </Project>

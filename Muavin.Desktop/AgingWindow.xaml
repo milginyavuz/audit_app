@@ -3,18 +3,32 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Cari Hesap Yaşlandırma"
         Height="800" Width="1400">
+
+    <!-- ✅ TÜM SAYILAR İÇİN TEK NOKTADAN TR FORMAT (₺ YOK) -->
+    <Window.Resources>
+
+        <!-- Numeric hücreleri sağa hizala -->
+        <Style x:Key="RightCell" TargetType="DataGridCell">
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="TextBlock.TextAlignment" Value="Right"/>
+        </Style>
+
+        <!-- Numeric text formatı: 146.893,82 (tr-TR culture ile) -->
+        <Style x:Key="TrNumberText" TargetType="TextBlock">
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Padding" Value="0,0,6,0"/>
+        </Style>
+
+    </Window.Resources>
+
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <!-- Filtreler -->
             <RowDefinition Height="Auto"/>
-            <!-- Özet başlık -->
             <RowDefinition Height="3*"/>
-            <!-- Özet grid (büyük) -->
             <RowDefinition Height="Auto"/>
-            <!-- Detay başlık -->
             <RowDefinition Height="2*"/>
-            <!-- Detay grid (küçük) -->
         </Grid.RowDefinitions>
 
         <!-- Filtreler + Yaşlandır + Excel'e Aktar -->
@@ -45,7 +59,7 @@
                    Text="Yaşlandırma Özeti"
                    FontWeight="Bold"/>
 
-        <!-- Yaşlandırma özeti (BÜYÜK grid, üstte) -->
+        <!-- Yaşlandırma özeti -->
         <DataGrid Grid.Row="2"
                   ItemsSource="{Binding ReportRows}"
                   AutoGenerateColumns="False"
@@ -55,26 +69,27 @@
                 <DataGridTextColumn Header="Hesap Kodu" Binding="{Binding HesapKodu}" Width="90"/>
                 <DataGridTextColumn Header="Hesap Adı" Binding="{Binding HesapAdi}" Width="220"/>
 
-                <DataGridTextColumn Header="0-30 gün" Binding="{Binding Gun_0_30, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="31-60 gün" Binding="{Binding Gun_31_60, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="61-90 gün" Binding="{Binding Gun_61_90, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="91-120 gün" Binding="{Binding Gun_91_120, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="121-150 gün" Binding="{Binding Gun_121_150, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="151-180 gün" Binding="{Binding Gun_151_180, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="181-210 gün" Binding="{Binding Gun_181_210, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="211-240 gün" Binding="{Binding Gun_211_240, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="241-270 gün" Binding="{Binding Gun_241_270, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="271-300 gün" Binding="{Binding Gun_271_300, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="301-330 gün" Binding="{Binding Gun_301_330, StringFormat=N2}" Width="90"/>
-                <DataGridTextColumn Header="331-365 gün" Binding="{Binding Gun_331_365, StringFormat=N2}" Width="90"/>
+                <!-- ✅ Numeric kolonlar: sağ hizalama + N2 -->
+                <DataGridTextColumn Header="0-30 gün" Binding="{Binding Gun_0_30, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="31-60 gün" Binding="{Binding Gun_31_60, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="61-90 gün" Binding="{Binding Gun_61_90, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="91-120 gün" Binding="{Binding Gun_91_120, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="121-150 gün" Binding="{Binding Gun_121_150, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="151-180 gün" Binding="{Binding Gun_151_180, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="181-210 gün" Binding="{Binding Gun_181_210, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="211-240 gün" Binding="{Binding Gun_211_240, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="241-270 gün" Binding="{Binding Gun_241_270, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="271-300 gün" Binding="{Binding Gun_271_300, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="301-330 gün" Binding="{Binding Gun_301_330, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="331-365 gün" Binding="{Binding Gun_331_365, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
 
-                <DataGridTextColumn Header="Açılış" Binding="{Binding Gun_Acilis, StringFormat=N2}" Width="90"/>
-
-                <DataGridTextColumn Header="&gt;365 gün" Binding="{Binding Gun_365Ustu, StringFormat=N2}" Width="90"/>
+                <DataGridTextColumn Header="Açılış" Binding="{Binding Gun_Acilis, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
+                <DataGridTextColumn Header="&gt;365 gün" Binding="{Binding Gun_365Ustu, StringFormat={}{0:N2}}" Width="90" CellStyle="{StaticResource RightCell}"/>
 
                 <DataGridTextColumn Header="Bakiye"
-                                    Binding="{Binding Bakiye, StringFormat=N2}"
-                                    Width="110"/>
+                                    Binding="{Binding Bakiye, StringFormat={}{0:N2}}"
+                                    Width="110"
+                                    CellStyle="{StaticResource RightCell}"/>
             </DataGrid.Columns>
         </DataGrid>
 
@@ -83,7 +98,7 @@
                    Text="Yaşlandırılan Hesap Hareketleri (Detay)"
                    FontWeight="Bold"/>
 
-        <!-- Detay hareketler (KÜÇÜK grid, altta) -->
+        <!-- Detay hareketler -->
         <DataGrid Grid.Row="4"
                   ItemsSource="{Binding DetailRows}"
                   AutoGenerateColumns="False"
@@ -95,15 +110,21 @@
                 <DataGridTextColumn Header="Tarih"
                                     Binding="{Binding PostingDate, StringFormat=d}"
                                     Width="90"/>
+
                 <DataGridTextColumn Header="Borç"
-                                    Binding="{Binding Borc, StringFormat=N2}"
-                                    Width="100"/>
+                                    Binding="{Binding Borc, StringFormat={}{0:N2}}"
+                                    Width="100"
+                                    CellStyle="{StaticResource RightCell}"/>
+
                 <DataGridTextColumn Header="Alacak"
-                                    Binding="{Binding Alacak, StringFormat=N2}"
-                                    Width="100"/>
+                                    Binding="{Binding Alacak, StringFormat={}{0:N2}}"
+                                    Width="100"
+                                    CellStyle="{StaticResource RightCell}"/>
+
                 <DataGridTextColumn Header="Bakiye"
-                                    Binding="{Binding Bakiye, StringFormat=N2}"
-                                    Width="120"/>
+                                    Binding="{Binding Bakiye, StringFormat={}{0:N2}}"
+                                    Width="120"
+                                    CellStyle="{StaticResource RightCell}"/>
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

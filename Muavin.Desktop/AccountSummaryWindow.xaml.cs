@@ -51,17 +51,36 @@ namespace Muavin.Desktop
                 items = items.Where(r => r.HesapKodu != null && wanted.Contains(r.HesapKodu));
             }
 
-            _current = items.GroupBy(r => new { r.HesapKodu, r.HesapAdi })
-                            .Select(g => new AccountSummaryRow
-                            {
-                                HesapKodu = g.Key.HesapKodu!,
-                                HesapAdi = g.Key.HesapAdi!,
-                                Borc = g.Sum(x => x.Borc),
-                                Alacak = g.Sum(x => x.Alacak),
-                                Bakiye = g.Sum(x => x.Borc) - g.Sum(x => x.Alacak)
-                            })
-                            .OrderBy(r => r.HesapKodu)
-                            .ToList();
+            _current = items
+                .Where(r => !string.IsNullOrWhiteSpace(r.HesapKodu))
+                .GroupBy(r => new { r.HesapKodu, r.HesapAdi })
+                .Select(g =>
+                {
+                    // ✅ Bu hesabın "en son" satırı
+                    var last = g
+                        .OrderByDescending(x => x.PostingDate ?? DateTime.MinValue)
+                        .ThenByDescending(x => x.EntryNumber ?? "")
+                        .ThenByDescending(x => x.EntryCounter ?? 0)
+                        .FirstOrDefault();
+
+                    var borc = g.Sum(x => x.Borc);
+                    var alacak = g.Sum(x => x.Alacak);
+
+                    return new AccountSummaryRow
+                    {
+                        HesapKodu = g.Key.HesapKodu ?? "",
+                        HesapAdi = g.Key.HesapAdi ?? "",
+                        Borc = borc,
+                        Alacak = alacak,
+                        Bakiye = borc - alacak,
+
+                        // ✅ Yeni alanlar
+                        LastDate = last?.PostingDate,
+                        LastRunningBalance = last?.RunningBalance ?? 0m
+                    };
+                })
+                .OrderBy(r => r.HesapKodu)
+                .ToList();
 
             grid.ItemsSource = _current;
         }
@@ -74,17 +93,28 @@ namespace Muavin.Desktop
                 return;
             }
 
-            var sfd = new Microsoft.Win32.SaveFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", FileName = "hesap_ozeti.xlsx" };
+            var sfd = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Excel (*.xlsx)|*.xlsx",
+                FileName = "hesap_ozeti.xlsx"
+            };
             if (sfd.ShowDialog() != true) return;
 
-            // Row’ları MuavinRow benzeri geçici tipe dönüştürelim
+            // ✅ ExportExcel helper'ı MuavinRow beklediği için geçici liste.
+            // LastDate / LastRunningBalance'ı da taşıyalım:
             var temp = _current.Select(x => new MuavinRow
             {
                 HesapKodu = x.HesapKodu,
                 HesapAdi = x.HesapAdi,
+
+                // Toplamlar
                 Borc = x.Borc,
                 Alacak = x.Alacak,
-                Tutar = x.Borc + x.Alacak
+                Tutar = x.Borc + x.Alacak,
+
+                // ✅ Son tarih / son bakiye (kolon olarak export'ta görünmesi için)
+                PostingDate = x.LastDate,
+                RunningBalance = x.LastRunningBalance
             }).ToList();
 
             Muavin.Xml.Parsing.PostProcessors.ExportExcel(temp, sfd.FileName, perAccountBalance: false);
@@ -95,9 +125,14 @@ namespace Muavin.Desktop
         {
             public string HesapKodu { get; set; } = "";
             public string HesapAdi { get; set; } = "";
+
             public decimal Borc { get; set; }
             public decimal Alacak { get; set; }
             public decimal Bakiye { get; set; }
+
+            // ✅ Yeni kolonlar (XAML’deki LastDate / LastRunningBalance binding’i için)
+            public DateTime? LastDate { get; set; }
+            public decimal LastRunningBalance { get; set; }
         }
     }
 }

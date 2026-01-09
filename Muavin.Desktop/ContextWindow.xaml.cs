@@ -1,7 +1,7 @@
-﻿//ContextWindow.xaml.cs
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -127,6 +127,132 @@ namespace Muavin.Desktop
             Close();
         }
 
+        // ===================== YENİ DÖNEM (YIL) =====================
+        private async void AddPeriodClicked(object sender, RoutedEventArgs e)
+        {
+            ErrorText = "";
+
+            try
+            {
+                if (cbCompany.SelectedItem is not DbMuavinRepository.CompanyItem company)
+                {
+                    ErrorText = "Önce bir şirket seçin (dönem eklemek için).";
+                    return;
+                }
+
+                var companyCode = (company.CompanyCode ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(companyCode))
+                {
+                    ErrorText = "Şirket kodu boş.";
+                    return;
+                }
+
+                // Yıl textbox doluysa onu kullan, değilse kullanıcıdan al
+                int year;
+                if (!int.TryParse(tbYear.Text?.Trim(), out year) || year <= 0)
+                {
+                    var y = Microsoft.VisualBasic.Interaction.InputBox(
+                        $"Şirket: {company.CompanyName}\nYeni dönem yılını girin (örn: 2024):",
+                        "Yeni Dönem (Yıl) Ekle",
+                        DateTime.Today.Year.ToString());
+
+                    if (string.IsNullOrWhiteSpace(y))
+                        return; // iptal
+
+                    if (!int.TryParse(y.Trim(), out year) || year <= 0)
+                    {
+                        ErrorText = "Yıl geçersiz.";
+                        return;
+                    }
+                }
+
+                // Kalıcı yaz: muavin.company_year
+                await _repo.EnsureCompanyYearAsync(companyCode, year, Environment.UserName);
+
+                // UI + state güncelle
+                tbYear.Text = year.ToString();
+                SelectedCompanyCode = companyCode;
+                SelectedCompanyName = company.CompanyName;
+                SelectedYear = year;
+
+                _state.CompanyCode = SelectedCompanyCode;
+                _state.CompanyName = SelectedCompanyName;
+                _state.Year = SelectedYear;
+
+                ErrorText = "";
+                tbYear.Focus();
+                tbYear.SelectAll();
+            }
+            catch (Exception ex)
+            {
+                ErrorText = "Yeni dönem eklenemedi: " + ex.Message;
+            }
+        }
+
+
+        /// <summary>
+        /// DbMuavinRepository içinde dönem/context ekleyen bir metot varsa çağırır.
+        /// Metot yoksa sessizce geçer (DB’de ayrı dönem tablosu yoksa zaten sorun değil).
+        /// Beklenen olası imzalar:
+        /// - Task EnsureCompanyYearAsync(string companyCode, int year)
+        /// - Task EnsurePeriodAsync(string companyCode, int year)
+        /// - Task EnsureContextAsync(string companyCode, int year)
+        /// (opsiyonel 3. param: createdBy/updatedBy string)
+        /// </summary>
+        private async Task TryEnsurePeriodInRepoAsync(string companyCode, int year)
+        {
+            // olası isimler
+            var names = new[]
+            {
+                "EnsureCompanyYearAsync",
+                "EnsurePeriodAsync",
+                "EnsureContextAsync",
+                "AddCompanyYearAsync",
+                "AddPeriodAsync"
+            };
+
+            var t = _repo.GetType();
+
+            MethodInfo? picked = null;
+            foreach (var n in names)
+            {
+                picked = t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                          .FirstOrDefault(m =>
+                          {
+                              if (!string.Equals(m.Name, n, StringComparison.Ordinal)) return false;
+                              var ps = m.GetParameters();
+                              if (ps.Length < 2) return false;
+                              if (ps[0].ParameterType != typeof(string)) return false;
+                              if (ps[1].ParameterType != typeof(int)) return false;
+                              // 2 param veya 3 param (string updatedBy) veya daha fazlası istemiyoruz
+                              if (ps.Length == 2) return true;
+                              if (ps.Length == 3 && ps[2].ParameterType == typeof(string)) return true;
+                              return false;
+                          });
+
+                if (picked != null) break;
+            }
+
+            if (picked == null)
+                return; // repo'da böyle bir method yok -> sorun değil
+
+            var psPicked = picked.GetParameters();
+            object? result;
+
+            if (psPicked.Length == 2)
+            {
+                result = picked.Invoke(_repo, new object?[] { companyCode, year });
+            }
+            else
+            {
+                // 3 param: updatedBy/createdBy gibi
+                result = picked.Invoke(_repo, new object?[] { companyCode, year, Environment.UserName });
+            }
+
+            if (result is Task task)
+                await task;
+        }
+
         // ===================== YENİ ŞİRKET (XML/ZIP/TXT) =====================
         private async void AddCompanyFromEdefterClicked(object sender, RoutedEventArgs e)
         {
@@ -187,7 +313,7 @@ namespace Muavin.Desktop
 
                     var info = _edefterParser.ParseCompanyInfo(xmlPath);
 
-                    // ParseCompanyInfo record alanları: TaxId + EntityName (senin kullanımına göre)
+                    // ParseCompanyInfo record alanları: TaxId + EntityName
                     taxId = (info.TaxId ?? "").Trim();
                     title = (info.EntityName ?? "").Trim();
                 }
@@ -282,9 +408,6 @@ namespace Muavin.Desktop
             if (mVkn.Success)
                 taxId = mVkn.Groups[1].Value.Trim();
 
-            // Aşırı “rastgele” 10 hane yakalama riskini azaltmak için:
-            // Eğer metinde "VKN" / "Vergi" / "Tax" vb. varsa ilk eşleşmeyi alıyoruz,
-            // yoksa yine de eşleşme varsa alıyoruz (sende format değişebilir).
             if (!string.IsNullOrWhiteSpace(taxId))
             {
                 // 0000... gibi gelirse temizle
@@ -312,5 +435,145 @@ namespace Muavin.Desktop
             public event EventHandler? CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
+
+
+        private async void PickYearClicked(object sender, RoutedEventArgs e)
+        {
+            ErrorText = "";
+
+            try
+            {
+                if (cbCompany.SelectedItem is not DbMuavinRepository.CompanyItem company)
+                {
+                    ErrorText = "Önce şirket seçin.";
+                    return;
+                }
+
+                var code = (company.CompanyCode ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    ErrorText = "Şirket kodu boş.";
+                    return;
+                }
+
+                // company_year + muavin_row union (senin güncel GetYearsAsync)
+                var years = await _repo.GetYearsAsync(code);
+                if (years == null || years.Count == 0)
+                {
+                    ErrorText = "Bu şirket için kayıtlı yıl bulunamadı.";
+                    return;
+                }
+
+                // Basit seçim dialog’u (minimal)
+                var picked = SelectFromList("Yıl Seç", "Bu şirkete ait yıllar:", years.Select(y => y.ToString()).ToList());
+                if (picked == null) return;
+
+                tbYear.Text = picked;
+                tbYear.Focus();
+                tbYear.SelectAll();
+            }
+            catch (Exception ex)
+            {
+                ErrorText = "Yıllar alınamadı: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// Minimal liste seçim dialog'u (harici pencere dosyası yok, ContextWindow içinde çalışır).
+        /// </summary>
+        private static string? SelectFromList(string title, string caption, List<string> items)
+        {
+            var w = new Window
+            {
+                Title = title,
+                Width = 320,
+                Height = 360,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var grid = new System.Windows.Controls.Grid { Margin = new Thickness(12) };
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+
+            var text = new System.Windows.Controls.TextBlock
+            {
+                Text = caption,
+                Margin = new Thickness(0, 0, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            var list = new System.Windows.Controls.ListBox
+            {
+                ItemsSource = items,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var ok = new System.Windows.Controls.Button
+            {
+                Content = "Seç",
+                Width = 90,
+                Height = 30,
+                IsDefault = true,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+
+            var cancel = new System.Windows.Controls.Button
+            {
+                Content = "İptal",
+                Width = 90,
+                Height = 30,
+                IsCancel = true
+            };
+
+            var buttons = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            buttons.Children.Add(ok);
+            buttons.Children.Add(cancel);
+
+            System.Windows.Controls.Grid.SetRow(text, 0);
+            System.Windows.Controls.Grid.SetRow(list, 1);
+            System.Windows.Controls.Grid.SetRow(buttons, 2);
+
+            grid.Children.Add(text);
+            grid.Children.Add(list);
+            grid.Children.Add(buttons);
+
+            w.Content = grid;
+
+            string? result = null;
+
+            ok.Click += (_, __) =>
+            {
+                if (list.SelectedItem is string s && !string.IsNullOrWhiteSpace(s))
+                {
+                    result = s.Trim();
+                    w.DialogResult = true;
+                    w.Close();
+                }
+            };
+
+            list.MouseDoubleClick += (_, __) =>
+            {
+                if (list.SelectedItem is string s && !string.IsNullOrWhiteSpace(s))
+                {
+                    result = s.Trim();
+                    w.DialogResult = true;
+                    w.Close();
+                }
+            };
+
+            // liste boşsa güvenlik
+            if (items.Count > 0) list.SelectedIndex = items.Count - 1;
+
+            var dialogResult = w.ShowDialog();
+            return dialogResult == true ? result : null;
+        }
+
+
     }
 }

@@ -241,6 +241,10 @@ namespace Muavin.Xml.Parsing
                         EntryNumber = entryNumber,
                         EntryCounter = ++lineNo,
 
+                        // txt için stabil fiş bazlı GroupKey:
+                        // override kalıcılığı için DOC vb. oynak alanlar kesinlikle burada olmamalı.
+                        GroupKey = $"{entryNumber}|{d:yyyy-MM-dd}",
+
                         FisTuru = fisTuru,
                         FisTipi = fisTipi,
                         Aciklama = aciklama,

@@ -1,4 +1,6 @@
-﻿using Muavin.Xml.Parsing;
+﻿// DbMuavinRepository.cs
+using ControlzEx.Standard;
+using Muavin.Xml.Parsing;
 using Npgsql;
 using NpgsqlTypes;
 using System;
@@ -39,6 +41,9 @@ namespace Muavin.Xml.Data
         // ===================== MODELS =====================
         public sealed record CompanyItem(string CompanyCode, string CompanyName);
 
+        // ✅ NEW: Company-Year modeli (opsiyonel UI’da göstermek istersen)
+        public sealed record CompanyYearItem(string CompanyCode, int Year, DateTimeOffset CreatedAt, string? CreatedBy);
+
         // (Opsiyonel) Fiş türü override modeli
         public sealed record FisTypeOverrideItem(
             string CompanyCode,
@@ -48,6 +53,29 @@ namespace Muavin.Xml.Data
             DateTimeOffset UpdatedAt,
             string? UpdatedBy
         );
+
+        // ===================== ENUMS =====================
+        public enum ImportReplaceMode
+        {
+            /// <summary>
+            /// Aynı source_file + yıl(lar) için önce sil, sonra yaz.
+            /// (mevcut davranışın replaceExistingForSameSource = true ile uyumlu)
+            /// </summary>
+            SameSource = 0,
+
+            /// <summary>
+            /// Payload içinde hangi yıllar varsa, o yılları komple silip yeniden yazar.
+            /// (daha agresif)
+            /// </summary>
+            YearsInPayload = 1,
+
+            /// <summary>
+            /// Payload içinde hangi aylar varsa, sadece o ayları silip yeniden yazar.
+            /// (eksik ay sonradan geldi senaryosu için en doğru)
+            /// </summary>
+            MonthsInPayload = 2
+        }
+
 
         // ===================== SCHEMA =====================
         public async Task EnsureSchemaAsync(CancellationToken ct = default)
@@ -63,6 +91,16 @@ CREATE TABLE IF NOT EXISTS muavin.company(
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
+
+-- ✅ Şirket-Yıl (dönem) tablosu (boş yıl bile tutulur)
+CREATE TABLE IF NOT EXISTS muavin.company_year(
+    company_code text NOT NULL REFERENCES muavin.company(company_code) ON DELETE CASCADE,
+    year         int  NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    created_by   text NULL,
+    PRIMARY KEY(company_code, year)
+);
+CREATE INDEX IF NOT EXISTS ix_company_year_company ON muavin.company_year(company_code);
 
 CREATE TABLE IF NOT EXISTS muavin.muavin_row(
     id               bigserial PRIMARY KEY,
@@ -101,7 +139,7 @@ CREATE TABLE IF NOT EXISTS muavin.muavin_row(
     batch_id         bigint NULL
 );
 
--- ✅ KÖKTEN ÇÖZÜM: kolonlar eksikse ekle (idempotent)
+-- ✅ Kolonlar eksikse ekle (idempotent)
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS document_number  text NULL;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS fis_turu         text NULL;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS fis_tipi         text NULL;
@@ -116,9 +154,10 @@ ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS group_key        text NUL
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS karsi_hesap      text NULL;
 
 CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year ON muavin.muavin_row(company_code, period_year);
+CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year_month ON muavin.muavin_row(company_code, period_year, period_month);
 CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year_source ON muavin.muavin_row(company_code, period_year, source_file);
 
--- override tablo (istersen)
+-- override tablo
 CREATE TABLE IF NOT EXISTS muavin.fis_type_override (
     company_code    text        NOT NULL,
     year            int         NOT NULL,
@@ -178,7 +217,70 @@ DO UPDATE SET company_name = EXCLUDED.company_name,
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
-        // ===================== YEARS =====================
+        // ===================== YEARS (Company-Year) =====================
+
+        /// <summary>
+        /// ✅ Boş yıl bile ekler (kalıcı dönem).
+        /// company_year tablosuna upsert yapar.
+        /// </summary>
+        public async Task EnsureCompanyYearAsync(
+            string companyCode,
+            int year,
+            string? createdBy = null,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode))
+                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
+            if (year <= 0)
+                throw new ArgumentException("year geçersiz", nameof(year));
+
+            companyCode = companyCode.Trim();
+            createdBy = string.IsNullOrWhiteSpace(createdBy) ? null : createdBy.Trim();
+
+            await using var conn = await OpenAsync(ct);
+
+            const string sql = @"
+INSERT INTO muavin.company_year(company_code, year, created_by)
+VALUES (@c, @y, @by)
+ON CONFLICT (company_code, year) DO NOTHING;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+            cmd.Parameters.AddWithValue("@y", year);
+            cmd.Parameters.AddWithValue("@by", (object?)createdBy ?? DBNull.Value);
+
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        public async Task<List<int>> GetCompanyYearsAsync(string companyCode, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode))
+                return new List<int>();
+
+            companyCode = companyCode.Trim();
+
+            await using var conn = await OpenAsync(ct);
+
+            const string sql = @"
+SELECT year
+FROM muavin.company_year
+WHERE company_code = @c
+ORDER BY year;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+
+            var years = new List<int>();
+            await using var rdr = await cmd.ExecuteReaderAsync(ct);
+            while (await rdr.ReadAsync(ct))
+                years.Add(rdr.GetInt32(0));
+
+            return years;
+        }
+
+        /// <summary>
+        /// ✅ UI için: company_year + muavin_row union → her türlü yıl listede görünür.
+        /// </summary>
         public async Task<List<int>> GetYearsAsync(string companyCode, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(companyCode))
@@ -189,10 +291,18 @@ DO UPDATE SET company_name = EXCLUDED.company_name,
             await using var conn = await OpenAsync(ct);
 
             const string sql = @"
-SELECT DISTINCT period_year
-FROM muavin.muavin_row
-WHERE company_code = @c
-ORDER BY period_year;";
+SELECT DISTINCT y FROM (
+    SELECT year AS y
+    FROM muavin.company_year
+    WHERE company_code = @c
+
+    UNION
+
+    SELECT DISTINCT period_year AS y
+    FROM muavin.muavin_row
+    WHERE company_code = @c
+) t
+ORDER BY y;";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@c", companyCode);
@@ -273,14 +383,99 @@ ORDER BY posting_date, kebir, hesap_kodu, entry_number, entry_counter;";
             return list;
         }
 
-        // ===================== BULK INSERT =====================
+        // ===================== DELETE HELPERS (✅ core fix) =====================
+
+        /// <summary>
+        /// ✅ Ay bazlı idempotent import için:
+        /// Bu şirket+year için sadece verilen ayları siler.
+        /// </summary>
+        public async Task DeleteRowsByCompanyYearMonthsAsync(
+            string companyCode,
+            int year,
+            IEnumerable<int> months,
+            NpgsqlConnection conn,
+            NpgsqlTransaction tx,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode))
+                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
+            if (year <= 0)
+                throw new ArgumentException("year geçersiz", nameof(year));
+            if (months is null)
+                throw new ArgumentNullException(nameof(months));
+            if (conn is null)
+                throw new ArgumentNullException(nameof(conn));
+            if (tx is null)
+                throw new ArgumentNullException(nameof(tx));
+
+            companyCode = companyCode.Trim();
+
+            var ms = months
+                .Where(m => m >= 1 && m <= 12)
+                .Distinct()
+                .OrderBy(m => m)
+                .ToArray();
+
+            if (ms.Length == 0) return;
+
+            const string sql = @"
+DELETE FROM muavin.muavin_row
+WHERE company_code = @c
+  AND period_year  = @y
+  AND period_month = ANY(@months);";
+
+            await using var cmd = new NpgsqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+            cmd.Parameters.AddWithValue("@y", year);
+            cmd.Parameters.AddWithValue("@months", ms);
+
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        /// <summary>
+        /// ✅ Tam yıl “replace” istenirse (opsiyonel):
+        /// Bu şirket+year için tüm satırları siler.
+        /// </summary>
+        public async Task DeleteRowsByCompanyYearAsync(
+            string companyCode,
+            int year,
+            NpgsqlConnection conn,
+            NpgsqlTransaction tx,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode))
+                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
+            if (year <= 0)
+                throw new ArgumentException("year geçersiz", nameof(year));
+            if (conn is null)
+                throw new ArgumentNullException(nameof(conn));
+            if (tx is null)
+                throw new ArgumentNullException(nameof(tx));
+
+            companyCode = companyCode.Trim();
+
+            const string sql = @"
+DELETE FROM muavin.muavin_row
+WHERE company_code = @c
+  AND period_year  = @y;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+            cmd.Parameters.AddWithValue("@y", year);
+
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // ===================== BULK INSERT (✅ fixed) =====================
         public async Task BulkInsertRowsAsync(
             string companyCode,
             IEnumerable<MuavinRow> rows,
             string sourceFile,
-            bool replaceExistingForSameSource = true,
+            bool replaceExistingForSameSource = true,   // (legacy param, aşağıda mode ile override edeceğiz)
             string? companyName = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            ImportReplaceMode replaceMode = ImportReplaceMode.MonthsInPayload // ✅ default’u güvenli yap
+        )
         {
             if (string.IsNullOrWhiteSpace(companyCode))
                 throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
@@ -295,25 +490,79 @@ ORDER BY posting_date, kebir, hesap_kodu, entry_number, entry_counter;";
             var list = rows.Where(r => r.PostingDate.HasValue).ToList();
             if (list.Count == 0) return;
 
-            var years = list.Select(r => r.PostingDate!.Value.Year).Distinct().ToArray();
+            // Yıl/Ay setleri
+            var yearSet = list.Select(r => r.PostingDate!.Value.Year).Distinct().ToArray();
 
+            // ✅ Import edilen yılları company_year tablosunda garanti et
+            foreach (var y in yearSet)
+                await EnsureCompanyYearAsync(companyCode, y, Environment.UserName, ct);
+
+            // group_key garanti
+            foreach (var r in list)
+                if (string.IsNullOrWhiteSpace(r.GroupKey))
+                    r.GroupKey = BuildGroupKey(r);
+
+            // Legacy param ile mode çakışmasın diye:
+            // Eğer caller eski paramı kullanıyorsa ama mode default geliyorsa, mode’a göre davranacağız.
+            // (replaceExistingForSameSource false verilirse ve mode SameSource ise delete yapmayız)
             await using var conn = await OpenAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
 
-            if (replaceExistingForSameSource)
+            // ===================== DELETE STRATEGY =====================
+            if (replaceMode == ImportReplaceMode.SameSource)
             {
-                const string delSql = @"
+                if (replaceExistingForSameSource)
+                {
+                    const string delSql = @"
 DELETE FROM muavin.muavin_row
 WHERE company_code = @c
   AND period_year = ANY(@years)
   AND source_file = @src;";
-
+                    await using var del = new NpgsqlCommand(delSql, conn, tx);
+                    del.Parameters.AddWithValue("@c", companyCode);
+                    del.Parameters.AddWithValue("@years", yearSet);
+                    del.Parameters.AddWithValue("@src", src);
+                    await del.ExecuteNonQueryAsync(ct);
+                }
+            }
+            else if (replaceMode == ImportReplaceMode.YearsInPayload)
+            {
+                const string delSql = @"
+DELETE FROM muavin.muavin_row
+WHERE company_code = @c
+  AND period_year = ANY(@years);";
                 await using var del = new NpgsqlCommand(delSql, conn, tx);
                 del.Parameters.AddWithValue("@c", companyCode);
-                del.Parameters.AddWithValue("@years", years);
-                del.Parameters.AddWithValue("@src", src);
+                del.Parameters.AddWithValue("@years", yearSet);
                 await del.ExecuteNonQueryAsync(ct);
             }
+            else // ✅ MonthsInPayload (önerilen)
+            {
+                // payload’daki (year, month) kombinasyonlarını çıkar
+                var ym = list
+                    .Select(r => (y: r.PostingDate!.Value.Year, m: r.PostingDate!.Value.Month))
+                    .Distinct()
+                    .ToList();
+
+                // yıl bazlı delete (her yıl için month array)
+                const string delSql = @"
+DELETE FROM muavin.muavin_row
+WHERE company_code = @c
+  AND period_year = @y
+  AND period_month = ANY(@months);";
+
+                foreach (var g in ym.GroupBy(x => x.y))
+                {
+                    var months = g.Select(x => x.m).Distinct().ToArray();
+
+                    await using var del = new NpgsqlCommand(delSql, conn, tx);
+                    del.Parameters.AddWithValue("@c", companyCode);
+                    del.Parameters.AddWithValue("@y", g.Key);
+                    del.Parameters.AddWithValue("@months", months);
+                    await del.ExecuteNonQueryAsync(ct);
+                }
+            }
+            // ===========================================================
 
             const string copySql = @"
 COPY muavin.muavin_row(
@@ -335,9 +584,6 @@ FROM STDIN (FORMAT BINARY);";
                     var dt = r.PostingDate!.Value.Date;
                     var py = dt.Year;
                     var pm = dt.Month;
-
-                    if (string.IsNullOrWhiteSpace(r.GroupKey))
-                        r.GroupKey = BuildGroupKey(r);
 
                     await importer.StartRowAsync(ct);
 
@@ -374,7 +620,7 @@ FROM STDIN (FORMAT BINARY);";
             await tx.CommitAsync(ct);
         }
 
-        // ===================== OVERRIDES (opsiyonel) =====================
+        // ===================== OVERRIDES =====================
         public async Task<Dictionary<string, string>> GetFisTypeOverridesAsync(
             string companyCode, int year, CancellationToken ct = default)
         {
@@ -462,6 +708,36 @@ DO UPDATE SET fis_turu = EXCLUDED.fis_turu,
             }
 
             await tx.CommitAsync(ct);
+        }
+
+        public async Task DeleteFisTypeOverrideAsync(
+            string companyCode,
+            int year,
+            string groupKey,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode))
+                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
+            if (year <= 0)
+                throw new ArgumentException("year geçersiz", nameof(year));
+            if (string.IsNullOrWhiteSpace(groupKey))
+                return;
+
+            companyCode = companyCode.Trim();
+            groupKey = groupKey.Trim();
+
+            await using var conn = await OpenAsync(ct);
+
+            const string sql = @"
+DELETE FROM muavin.fis_type_override
+WHERE company_code = @c AND year = @y AND group_key = @gk;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+            cmd.Parameters.AddWithValue("@y", year);
+            cmd.Parameters.AddWithValue("@gk", groupKey);
+
+            await cmd.ExecuteNonQueryAsync(ct);
         }
 
         // ===================== HELPERS =====================

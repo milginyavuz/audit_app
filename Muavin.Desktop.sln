@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.14.36616.10
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Muavin.Desktop", "Muavin.Desktop\Muavin.Desktop.csproj", "{63BB0E79-B282-4563-9A8D-3CD3AC840BD2}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9421C0F0-EF28-B12A-FF75-A00360FBB9C1} = {9421C0F0-EF28-B12A-FF75-A00360FBB9C1}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Muavin.Loader", "Muavin.Loader\Muavin.Loader.csproj", "{E5926F5C-3D7E-497B-8745-AF3F5260F158}"
 EndProject

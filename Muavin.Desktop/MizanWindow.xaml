@@ -175,22 +175,22 @@
                 </DataGridTemplateColumn>
 
                 <DataGridTextColumn Header="Borç"
-                                    Binding="{Binding Borc, StringFormat=N2}"
+                                    Binding="{Binding Borc, StringFormat={}{0:N2}}"
                                     Width="120"
                                     ElementStyle="{StaticResource RightAlignedCellStyle}"/>
 
                 <DataGridTextColumn Header="Alacak"
-                                    Binding="{Binding Alacak, StringFormat=N2}"
+                                    Binding="{Binding Alacak, StringFormat={}{0:N2}}"
                                     Width="120"
                                     ElementStyle="{StaticResource RightAlignedCellStyle}"/>
 
                 <DataGridTextColumn Header="Borç Bakiye"
-                                    Binding="{Binding BorcBakiye, StringFormat=N2}"
+                                    Binding="{Binding BorcBakiye, StringFormat={}{0:N2}}"
                                     Width="120"
                                     ElementStyle="{StaticResource RightAlignedCellStyle}"/>
 
                 <DataGridTextColumn Header="Alacak Bakiye"
-                                    Binding="{Binding AlacakBakiye, StringFormat=N2}"
+                                    Binding="{Binding AlacakBakiye, StringFormat={}{0:N2}}"
                                     Width="120"
                                     ElementStyle="{StaticResource RightAlignedCellStyle}"/>
 
