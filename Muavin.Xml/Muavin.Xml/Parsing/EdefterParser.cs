@@ -19,9 +19,9 @@ namespace Muavin.Xml.Parsing
         public sealed record CompanyInfo(string? TaxId, string? EntityName);
 
         /// <summary>
-        /// e-Defter XML içinden şirket bilgisi okur (prefix/namespace bağımsız).
-        /// - Ünvan:   <gl-bus:entityName>
-        /// - VergiNo: <gl-bus:taxID>
+        /// eDefter xml içinden şirket bilgisi okur (prefix/namespace bağımsız)
+        /// ünvan:   <gl-bus:entityName>
+        /// vergiNo: <gl-bus:taxID>
         /// </summary>
         public CompanyInfo ParseCompanyInfo(string xmlPath)
         {
@@ -65,7 +65,7 @@ namespace Muavin.Xml.Parsing
             return new CompanyInfo(taxId, entityName);
         }
 
-        // Backward compatibility
+        // backward compatibility
         public CompanyInfo ReadCompanyInfo(string xmlPath) => ParseCompanyInfo(xmlPath);
 
         private static XmlReaderSettings SecureReaderSettings()
@@ -78,7 +78,7 @@ namespace Muavin.Xml.Parsing
                 XmlResolver = null
             };
 
-        // --- küçük yardımcılar ---
+        // --- yardımcılar ---
         private static string? TrimZeros(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return raw;
@@ -210,7 +210,7 @@ namespace Muavin.Xml.Parsing
         private static ISet<string> NormSet(IEnumerable<string> paths)
             => new HashSet<string>(paths.Select(PathNormalizer.Normalize).Where(s => s.Length > 0), StringComparer.Ordinal);
 
-        // ===================== NEW: stable EntryNumber for XML if missing =====================
+        // ===================== stable EntryNumber for xml if missing =====================
         private static string BuildStableEntryNumber(DateTime postingDate, string? hesapKodu, decimal borc, decimal alacak, string? aciklama, int entryCounter)
         {
             string normDesc = NormalizeForKey(aciklama);
@@ -258,7 +258,7 @@ namespace Muavin.Xml.Parsing
                                (aciklama.Contains("kapanış", StringComparison.OrdinalIgnoreCase) ||
                                 aciklama.Contains("kapanis", StringComparison.OrdinalIgnoreCase));
 
-            // AND kuralı: açıklama + tarih sinyali
+            // AND kuralı açıklama + tarih sinyali
             if (descAcilis && postingDate.Month == 1 && postingDate.Day == 1)
                 return ("Açılış", "Açılış");
 
@@ -359,7 +359,7 @@ namespace Muavin.Xml.Parsing
                     EntryCounter = d_lineNo ?? (h_detailIndex > 0 ? h_detailIndex : 1)
                 };
 
-                // Document no fallback
+                // document no fallback
                 if (!string.IsNullOrWhiteSpace(row.Aciklama) && string.IsNullOrWhiteSpace(row.DocumentNumber))
                 {
                     var doc = TryExtractDocNo(row.Aciklama);
@@ -371,7 +371,7 @@ namespace Muavin.Xml.Parsing
                 row.HesapAdi = Combine(d_mainDesc, d_subDesc);
                 row.Kebir = GuessKebir(row.HesapKodu);
 
-                // Borç / Alacak
+                // borç / alacak
                 if (row.DebitCreditCode == "D") { row.Borc = d_amount; row.Alacak = 0m; }
                 else if (row.DebitCreditCode == "C") { row.Borc = 0m; row.Alacak = d_amount; }
                 else { row.Borc = 0m; row.Alacak = 0m; }

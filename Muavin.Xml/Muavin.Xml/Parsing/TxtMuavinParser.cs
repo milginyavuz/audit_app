@@ -232,7 +232,7 @@ namespace Muavin.Xml.Parsing
 
                     var docNo = TryExtractDocNo(aciklama);
 
-                    // NEW: AND-rule inference for FisTuru/FisTipi
+                    //  AND-rule inference for FisTuru/FisTipi
                     var (fisTuru, fisTipi) = InferFisTxt(fisTuruField, aciklama);
 
                     rows.Add(new MuavinRow

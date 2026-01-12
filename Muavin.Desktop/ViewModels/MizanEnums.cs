@@ -17,7 +17,7 @@ namespace Muavin.Desktop.Enums
 
     public enum GorunumModu
     {
-        AcikDetayli,         // Kebir + alt hesaplar (indentli)
-        KapaliSadeceKebir    // Sadece Kebir satırları
+        AcikDetayli,         // kebir + alt hesaplar indentli
+        KapaliSadeceKebir    // sadece kebir satırları
     }
 }

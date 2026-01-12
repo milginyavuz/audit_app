@@ -78,7 +78,7 @@ namespace Muavin.Desktop.ViewModels
                 if (hareketDurumu == HareketDurumu.SadeceIslemeyen && kebirIsWorking)
                     goto SkipKebirHeader;
 
-                // fallback: muavinden gelen ad (eski davranış)
+                // fallback muavinden gelen ad (eski davranış)
                 string fallbackKebirAdi =
                     kebirGroup
                         .FirstOrDefault(r => string.Equals(
@@ -89,8 +89,8 @@ namespace Muavin.Desktop.ViewModels
                     ?? kebirGroup.First().HesapAdi?.Trim()
                     ?? string.Empty;
 
-                // ✅ asıl: HesapPlani.txt’den kebir adı
-                // 8 ve 9 için otomatik özel başlık da burada çözülüyor.
+                // asıl HesapPlani.txt den kebir adı
+                // 8 ve 9 için otomatik özel başlık
                 string kebirHesapAdi = AccountPlan.GetNameForHeader(kebirCode, fallbackKebirAdi);
 
                 var kebirRow = new MizanRow
@@ -165,7 +165,7 @@ namespace Muavin.Desktop.ViewModels
                     {
                         Kebir = kebirCode,
                         HesapKodu = hesapKodu,
-                        HesapAdi = hesapAdi, // alt hesap adları aynen kalsın demiştin
+                        HesapAdi = hesapAdi, // alt hesap adları aynen kalsın
                         Borc = donemBorc,
                         Alacak = donemAlacak,
                         BorcBakiye = borcBakiye,

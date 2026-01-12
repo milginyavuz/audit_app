@@ -7,11 +7,11 @@ using Muavin.Xml.Parsing;   // MuavinRow için
 namespace Muavin.Xml.Data
 {
     /// <summary>
-    /// PostgreSQL'e bağlanıp muavin_row tablosuna toplu kayıt atan basit helper.
+    /// postgreSQLe bağlanıp muavin_row tablosuna toplu kayıt atan basit helper
     /// </summary>
     public static class MuavinDb
     {
-        // TODO: ŞİFRENİ BURAYA YAZ
+        
         private const string ConnectionString =
             "Host=localhost;Port=5432;Username=postgres;Password=anilymm;Database=muavin";
 
@@ -23,7 +23,7 @@ namespace Muavin.Xml.Data
         }
 
         /// <summary>
-        /// Tek dosyadan gelen satırları muavin_row tablosuna yazar.
+        /// tek dosyadan gelen satırları muavin_row tablosuna yazar
         /// companyCode: VKN veya şirket kodu
         /// year/month: yevmiye dönemi
         /// sourceFile: xml yolu (loglamak için)
@@ -92,7 +92,7 @@ VALUES
 
             await using var cmd = new NpgsqlCommand(sql, conn, tx);
 
-            // Parametreleri bir kez tanımlayıp her satırda sadece değerini değiştiriyoruz
+            
             cmd.Parameters.Add(new NpgsqlParameter("company_code", NpgsqlTypes.NpgsqlDbType.Varchar));
             cmd.Parameters.Add(new NpgsqlParameter("period_year", NpgsqlTypes.NpgsqlDbType.Integer));
             cmd.Parameters.Add(new NpgsqlParameter("period_month", NpgsqlTypes.NpgsqlDbType.Integer));
