@@ -10,149 +10,185 @@
 
     <DockPanel>
 
-        <!-- ÜST ŞERİT -->
+        <!-- Resources -->
+        <DockPanel.Resources>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+            <!-- Daha modern ve %40 daha küçük buton/alan ölçüleri -->
+            <Style TargetType="Button">
+                <Setter Property="Padding" Value="10,5"/>
+                <Setter Property="MinHeight" Value="24"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Margin" Value="6,0,0,0"/>
+            </Style>
+
+            <Style TargetType="ToggleButton">
+                <Setter Property="Padding" Value="9,5"/>
+                <Setter Property="MinHeight" Value="24"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Margin" Value="6,0,0,0"/>
+            </Style>
+
+            <Style TargetType="TextBox">
+                <Setter Property="MinHeight" Value="24"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Margin" Value="6,0,0,0"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style TargetType="DatePicker">
+                <Setter Property="MinHeight" Value="24"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Margin" Value="6,0,0,0"/>
+            </Style>
+
+            <Style TargetType="TextBlock">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="FontSize" Value="12"/>
+            </Style>
+        </DockPanel.Resources>
+
+        <!-- ===================== TOP BAR (2 rows) ===================== -->
         <Border DockPanel.Dock="Top"
-                Padding="8"
-                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
-                Height="100">
+                Padding="10"
+                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                <!-- Dosya/klasör seç + Bağlam/DB -->
-                <StackPanel Orientation="Horizontal"
-                            Grid.Column="0"
-                            VerticalAlignment="Center">
-                    <Button Content="Dosya / Klasör Seç…"
-                            Padding="14,6"
-                            Command="{Binding PickCommand}"/>
+                <!-- Row 0: Aksiyonlar + Sağda Excel -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                    <Button Content="Bağlam Değiştir…"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ChangeContextCommand}" />
+                    <!-- Sol aksiyonlar + Hesap/Yaşlandırma/Mizan butonları -->
+                    <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                        <Button Content="Bağlam Değiştir…"
+                                Margin="0,0,0,0"
+                                ToolTip="Şirket ve dönem bağlamını değiştirir"
+                                Command="{Binding ChangeContextCommand}" />
 
-                    <Button Content="Veritabanına Veri Ekle"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ImportToDatabaseCommand}" />
-                </StackPanel>
+                        <Button Content="Veritabanına Veri Ekle"
+                                ToolTip="Seçili dosyalardan veriyi veritabanına aktarır"
+                                Command="{Binding ImportToDatabaseCommand}" />
 
-                <!-- Filtreler -->
-                <StackPanel Orientation="Horizontal"
-                            Grid.Column="2"
-                            VerticalAlignment="Center">
+                        <Button Content="Yüklemeyi Geri Al"
+                                ToolTip="{Binding UndoLastImportToolTip}"
+                                Command="{Binding UndoLastImportCommand}"/>
 
-                    <!-- Kebir aralığı -->
-                    <TextBlock Text="Kebir:"
-                               Margin="0,0,6,0"
-                               VerticalAlignment="Center"/>
-                    <TextBox Width="70"
-                             HorizontalContentAlignment="Center"
-                             ToolTip="Başlangıç (örn: 100)"
-                             Text="{Binding Filters.KebirBas, UpdateSourceTrigger=PropertyChanged}"/>
-                    <TextBlock Text="–"
-                               Margin="4,0"
-                               VerticalAlignment="Center"/>
-                    <TextBox Width="70"
-                             HorizontalContentAlignment="Center"
-                             ToolTip="Bitiş (örn: 799)"
-                             Text="{Binding Filters.KebirBit, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Separator Margin="10,0"/>
 
-                    <Separator Margin="12,0"/>
+                        <Button Content="Hesap Özeti"
+                                ToolTip="Seçili hesap için özet ekranını açar"
+                                Command="{Binding OpenAccountSummaryCommand}"/>
 
-                    <!-- Tarih aralığı -->
-                    <TextBlock Text="Tarih:"
-                               Margin="0,0,6,0"
-                               VerticalAlignment="Center"/>
-                    <DatePicker Width="140"
-                                SelectedDate="{Binding Filters.TarihBas}"/>
-                    <TextBlock Text="–"
-                               Margin="4,0"
-                               VerticalAlignment="Center"/>
-                    <DatePicker Width="140"
-                                SelectedDate="{Binding Filters.TarihBit}"/>
+                        <Button Content="Yaşlandırma"
+                                ToolTip="Cari hesap yaşlandırma ekranını açar"
+                                Command="{Binding OpenAgingCommand}"/>
 
-                    <Separator Margin="12,0"/>
+                        <Button Content="Mizan"
+                                ToolTip="Çalışma mizanı ekranını açar"
+                                Click="MizanButton_Click"/>
 
-                    <!-- Hesap kodu çoklu arama -->
-                    <TextBlock Text="Hesap Kodu:"
-                               Margin="0,0,6,0"
-                               VerticalAlignment="Center"/>
-                    <TextBox Width="260"
-                             ToolTip="Virgülle çoklu kod (örn: 100-001-0001,320-001-0001)"
-                             Text="{Binding Filters.HesapKodu, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="İpucu: Fiş Numarası'na tıklayınca aynı fiş hareketleri filtrelenir."
+                                   Margin="14,0,0,0"
+                                   Opacity="0.75"/>
+                    </WrapPanel>
 
-                    <Button Content="Ara"
-                            Margin="12,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ApplyFiltersCommand}"/>
+                    <!-- Sağ: Excel -->
+                    <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                        <Button Content="Excel’e Aktar"
+                                ToolTip="Ekranda gördüğünüz tabloyu Excel dosyasına aktarır ve açar"
+                                Margin="0,0,0,0"
+                                Click="ExportExcel_Click"/>
+                    </WrapPanel>
+                </Grid>
 
-                    <Button Content="Temizle"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ClearAllCommand}"/>
+                <!-- Row 2: Filtre Bar -->
+                <Border Grid.Row="2"
+                        Padding="8"
+                        CornerRadius="6"
+                        Background="#10FFFFFF"
+                        BorderBrush="#22000000"
+                        BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                    <Button Content="Sıfırla"
-                            Padding="14,6"
-                            Command="{Binding ResetFiltersCommand}" />
+                        <WrapPanel Grid.Column="0" VerticalAlignment="Center">
 
-                    <Separator Margin="12,0"/>
+                            <TextBlock Text="Kebir:" Margin="0,0,0,0"/>
+                            <TextBox Width="42"
+                                     HorizontalContentAlignment="Center"
+                                     ToolTip="Başlangıç Kebir (örn: 100)"
+                                     Text="{Binding Filters.KebirBas, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="–" Margin="6,0,0,0"/>
+                            <TextBox Width="42"
+                                     HorizontalContentAlignment="Center"
+                                     ToolTip="Bitiş Kebir (örn: 799)"
+                                     Text="{Binding Filters.KebirBit, UpdateSourceTrigger=PropertyChanged}"/>
 
-                    <ToggleButton Content="Açılış Hariç"
-                                  Width="120"
-                                  IsChecked="{Binding Filters.ExcludeAcilis, Mode=TwoWay}" />
+                            <Separator Margin="10,0"/>
 
-                    <ToggleButton Content="Kapanış Hariç"
-                                  Width="120"
-                                  Margin="6,0,0,0"
-                                  IsChecked="{Binding Filters.ExcludeKapanis, Mode=TwoWay}" />
+                            <TextBlock Text="Tarih:"/>
+                            <!-- Tarih tam görünsün -->
+                            <DatePicker Width="125"
+                                        ToolTip="Başlangıç tarihi"
+                                        SelectedDate="{Binding Filters.TarihBas}"
+                                        SelectedDateFormat="Short"/>
 
-                    <Button Content="Ara"
-                            Margin="12,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ApplyFiltersCommand}"/>
+                            <TextBlock Text="–" Margin="6,0,0,0"/>
 
-                    <Button Content="Sıfırla"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding ResetFiltersCommand}" />
-                </StackPanel>
+                            <DatePicker Width="125"
+                                        ToolTip="Bitiş tarihi"
+                                        SelectedDate="{Binding Filters.TarihBit}"
+                                        SelectedDateFormat="Short"/>
 
-                <!-- Sağdaki butonlar -->
-                <StackPanel Grid.Column="4"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
+                            <Separator Margin="10,0"/>
 
-                    <Button Content="Hesap Özeti"
-                            Padding="14,6"
-                            Command="{Binding OpenAccountSummaryCommand}"/>
+                            <TextBlock Text="Hesap Kodu:"/>
+                            <TextBox Width="160"
+                                     ToolTip="Virgülle çoklu kod (örn: 100-001-0001,320-001-0001)"
+                                     Text="{Binding Filters.HesapKodu, UpdateSourceTrigger=PropertyChanged}"/>
 
-                    <Button Content="Yaşlandırma"
-                            Margin="6,0,0,0"
-                            Padding="14,6"
-                            Command="{Binding OpenAgingCommand}"/>
+                            <Button Content="Ara"
+                                    ToolTip="Filtreleri uygular"
+                                    Command="{Binding ApplyFiltersCommand}"/>
 
-                    <Button Content="Mizan"
-                            Width="90"
-                            Margin="4,0,0,0"
-                            Click="MizanButton_Click"/>
-                </StackPanel>
+                            <Button Content="Filtreleri Sıfırla"
+                                    ToolTip="Kebir, tarih ve hesap kodu filtrelerini sıfırlar"
+                                    Command="{Binding ResetFiltersCommand}"/>
 
-                <StackPanel Grid.Column="6"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
-                    <Button Content="Excel’e Aktar"
-                            Padding="14,6"
-                            Click="ExportExcel_Click"/>
-                </StackPanel>
+                            <ToggleButton Content="Açılış Hariç"
+                                          Width="105"
+                                          ToolTip="Açılış fişi hareketlerini listeden hariç tutar"
+                                          IsChecked="{Binding Filters.ExcludeAcilis, Mode=TwoWay}" />
+
+                            <ToggleButton Content="Kapanış Hariç"
+                                          Width="105"
+                                          ToolTip="Kapanış fişi hareketlerini listeden hariç tutar"
+                                          IsChecked="{Binding Filters.ExcludeKapanis, Mode=TwoWay}" />
+
+                            <Button Content="Fiş Odağını Kapat"
+                                    ToolTip="Fiş numarasına göre yapılan filtrelemeyi kaldırır"
+                                    Visibility="{Binding IsFisFocusActive, Converter={StaticResource BoolToVis}}"
+                                    Command="{Binding ClearFisFocusCommand}"/>
+
+                            <Button Content="Ekranı Boşalt"
+                                    ToolTip="Ekrandaki tüm satırları kaldırır (veritabanını etkilemez). Geri yüklemek için 'Veriyi Yeniden Yükle' kullanın."
+                                    Command="{Binding ClearAllCommand}"/>
+                        </WrapPanel>
+
+                        <Border Grid.Column="1" Width="0"/>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
 
@@ -171,13 +207,21 @@
                 <TextBlock Text="{Binding Rows.Count, StringFormat=Tamamlandı — {0} satır}"
                            FontWeight="SemiBold"/>
             </StatusBarItem>
+
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="{Binding FisFocusBadgeText}"
+                           FontWeight="SemiBold"
+                           Visibility="{Binding IsFisFocusActive, Converter={StaticResource BoolToVis}}"
+                           Margin="0,0,12,0"/>
+            </StatusBarItem>
         </StatusBar>
 
         <!-- TABLO -->
         <DataGrid x:Name="RowsGrid"
                   ItemsSource="{Binding Rows}"
                   SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
-                  IsReadOnly="True"
+                  IsReadOnly="False"
+                  BeginningEdit="RowsGrid_BeginningEdit"
                   AutoGenerateColumns="False"
                   EnableRowVirtualization="True"
                   SelectionMode="Single"
@@ -190,127 +234,120 @@
                   RowHeaderWidth="0"
                   VerticalAlignment="Stretch"
                   HorizontalAlignment="Stretch"
-                  SelectionChanged="RowsGrid_SelectionChanged">
+                  SelectionChanged="RowsGrid_SelectionChanged"
+                  PreviewMouseLeftButtonDown="RowsGrid_PreviewMouseLeftButtonDown">
 
-            <!-- ✅ Sağ tıkla tıklanan satırı seç -->
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow">
-                    <EventSetter Event="PreviewMouseRightButtonDown"
-                                 Handler="RowsGridRow_PreviewMouseRightButtonDown"/>
-                </Style>
-                
-                
-                
-            </DataGrid.RowStyle>
-
+            <!-- ✅ MANUEL FİŞ TÜRÜ OVERRIDE: SAĞ TIK MENÜSÜ -->
             <DataGrid.ContextMenu>
-                <!-- ✅ ContextMenu kendi visual-tree’ında olduğu için DataContext’i buradan bağlamak şart -->
-                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-
-                    <!-- ✅ Dinamik bilgi satırı (tıklanınca işlem yapmaz) -->
-                    <MenuItem Header="{Binding ContextMenuFisHeader}"
-                  IsEnabled="False"/>
-
+                <ContextMenu>
+                    <MenuItem Header="{Binding ContextMenuFisHeader}" IsEnabled="False"/>
                     <Separator/>
 
                     <MenuItem Header="Fiş Türü">
-                        <!-- ✅ Kullanıcı dostu isim: Normal yerine -->
-                        <MenuItem Header="Varsayılana Dön (Override’ı Kaldır)"
-                      Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
-                      CommandParameter="Normal"/>
-
+                        <MenuItem Header="Normal"
+                                  Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
+                                  CommandParameter="Normal"/>
                         <MenuItem Header="Açılış"
-                      Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
-                      CommandParameter="Açılış"/>
-
+                                  Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
+                                  CommandParameter="Açılış"/>
                         <MenuItem Header="Kapanış"
-                      Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
-                      CommandParameter="Kapanış"/>
+                                  Command="{Binding SetFisTuruForSelectedFisWithPromptCommand}"
+                                  CommandParameter="Kapanış"/>
                     </MenuItem>
 
                     <Separator/>
 
-                    <!-- ✅ Geri Al: gerçek anlamda son değişikliği geri alır -->
-                    <MenuItem Header="↩ Son Değişikliği Geri Al"
-                  Command="{Binding UndoLastFisTuruChangeCommand}"
-                  IsEnabled="{Binding CanUndoFisTuruChange}"/>
+                    <MenuItem Header="Son değişikliği geri al"
+                              Command="{Binding UndoLastFisTuruChangeCommand}"
+                              IsEnabled="{Binding CanUndoFisTuruChange}"/>
 
-                    <Separator/>
-
-                    <MenuItem Header="Değişiklikleri Kaydet"
-                  Command="{Binding SaveFisTuruOverridesToDbCommand}"/>
+                    <MenuItem Header="Değişiklikleri DB'ye kaydet"
+                              Command="{Binding SaveFisTuruOverridesToDbCommand}"/>
                 </ContextMenu>
             </DataGrid.ContextMenu>
 
-
             <DataGrid.Resources>
-                <Style x:Key="RightAlign" TargetType="TextBlock">
-                    <Setter Property="TextAlignment" Value="Right"/>
+                <Style x:Key="FisNoLinkText" TargetType="TextBlock">
+                    <Setter Property="TextDecorations" Value="Underline"/>
+                    <Setter Property="Cursor" Value="Hand"/>
+                    <Setter Property="ToolTip" Value="Aynı fiş numarasına ait hareketleri görmek için tıklayın (tekrar tıkla: geri dön)."/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+
+                <Style x:Key="FisNoCellStyle" TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="6,2"/>
+                    <Setter Property="ToolTip" Value="Aynı fiş numarasına ait hareketleri görmek için tıklayın (tekrar tıkla: geri dön)."/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#FFF3F6FF"/>
+                        </Trigger>
+
+                        <DataTrigger Binding="{Binding IsFocusedFis}" Value="True">
+                            <Setter Property="Background" Value="#FFFFF2CC"/>
+                            <Setter Property="FontWeight" Value="Bold"/>
+                        </DataTrigger>
+                    </Style.Triggers>
                 </Style>
             </DataGrid.Resources>
 
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <EventSetter Event="PreviewMouseRightButtonDown"
+                                 Handler="RowsGridRow_PreviewMouseRightButtonDown"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding DataContext.IsFisFocusActive, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                     Value="True">
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Kayıt No"
-                                    Binding="{Binding EntryCounter}"
-                                    Width="70"/>
-
-                <DataGridTextColumn Header="Kebir"
-                                    Binding="{Binding Kebir}"
-                                    SortMemberPath="Kebir"
-                                    Width="60"/>
-
-                <DataGridTextColumn Header="Hesap Kodu"
-                                    Binding="{Binding HesapKodu}"
-                                    SortMemberPath="HesapKodu"
-                                    Width="160"/>
-
-                <DataGridTextColumn Header="Hesap Adı"
-                                    Binding="{Binding HesapAdi}"
-                                    SortMemberPath="HesapAdi"
-                                    Width="220"/>
-
+                <DataGridTextColumn Header="Kayıt No" Binding="{Binding EntryCounter}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Kebir" Binding="{Binding Kebir}" SortMemberPath="Kebir" Width="60" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Hesap Kodu" Binding="{Binding HesapKodu}" SortMemberPath="HesapKodu" Width="160" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Hesap Adı" Binding="{Binding HesapAdi}" SortMemberPath="HesapAdi" Width="220" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Fiş Tarihi"
                                     Binding="{Binding PostingDate, StringFormat=\{0:dd.MM.yyyy\}}"
-                                    SortMemberPath="PostingDate"
-                                    Width="110"/>
+                                    SortMemberPath="PostingDate" Width="110" IsReadOnly="True"/>
 
                 <DataGridTextColumn Header="Fiş Numarası"
                                     Binding="{Binding EntryNumber}"
                                     SortMemberPath="EntryNumber"
-                                    Width="110"/>
+                                    Width="110"
+                                    ElementStyle="{StaticResource FisNoLinkText}"
+                                    CellStyle="{StaticResource FisNoCellStyle}"
+                                    IsReadOnly="True"/>
 
-                <DataGridTextColumn Header="Fiş Türü"
-                                    Binding="{Binding FisTuru}"
-                                    Width="100"/>
+                <!-- ✅ FİŞ TÜRÜ: ComboBox (ÖNEMLİ: TwoWay bağlama yok, Undo bozulmasın) -->
+                <DataGridTemplateColumn Header="Fiş Türü" Width="110" IsReadOnly="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding FisTuru}" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
 
-                <DataGridTextColumn Header="Açıklama"
-                                    Binding="{Binding Aciklama}"
-                                    SortMemberPath="Aciklama"
-                                    Width="*"/>
+                    <DataGridTemplateColumn.CellEditingTemplate>
+                        <DataTemplate>
+                            <ComboBox MinWidth="100"
+                                      ItemsSource="{Binding DataContext.FisTuruOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                      SelectedItem="{Binding FisTuru, Mode=OneWay}"
+                                      SelectionChanged="FisTuruCombo_SelectionChanged"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
 
-                <DataGridTextColumn Header="Borç"
-                                    Binding="{Binding Borc, StringFormat={}{0:N2}}"
-                                    CellStyle="{StaticResource RightCell}"
-                                    Width="110"/>
-
-                <DataGridTextColumn Header="Alacak"
-                                    Binding="{Binding Alacak, StringFormat={}{0:N2}}"
-                                    CellStyle="{StaticResource RightCell}"
-                                    Width="110"/>
-
-                <DataGridTextColumn Header="Tutar"
-                                    Binding="{Binding Tutar, StringFormat={}{0:N2}}"
-                                    CellStyle="{StaticResource RightCell}"
-                                    Width="110"/>
-
-                <DataGridTextColumn Header="Bakiye"
-                                    Binding="{Binding RunningBalance, StringFormat={}{0:N2}}"
-                                    CellStyle="{StaticResource RightCell}"
-                                    Width="110"/>
-
-                <DataGridTextColumn Header="Karşı Hesap"
-                                    Binding="{Binding KarsiHesap}"
-                                    Width="220"/>
+                <DataGridTextColumn Header="Açıklama" Binding="{Binding Aciklama}" SortMemberPath="Aciklama" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Borç" Binding="{Binding Borc, StringFormat={}{0:N2}}" Width="110" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Alacak" Binding="{Binding Alacak, StringFormat={}{0:N2}}" Width="110" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Tutar" Binding="{Binding Tutar, StringFormat={}{0:N2}}" Width="110" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Bakiye" Binding="{Binding RunningBalance, StringFormat={}{0:N2}}" Width="110" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Karşı Hesap" Binding="{Binding KarsiHesap}" Width="220" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 

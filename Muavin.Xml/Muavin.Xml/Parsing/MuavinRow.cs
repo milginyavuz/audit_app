@@ -70,5 +70,12 @@ namespace Muavin.Xml.Parsing
 
         // helper
         public string PostingDateText => PostingDate?.ToString("dd.MM.yyyy") ?? "";
+
+        private bool _isFocusedFis;
+        public bool IsFocusedFis
+        {
+            get => _isFocusedFis;
+            set { if (_isFocusedFis != value) { _isFocusedFis = value; OnPropertyChanged(); } }
+        }
     }
 }

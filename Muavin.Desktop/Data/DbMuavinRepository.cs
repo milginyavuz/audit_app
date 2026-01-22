@@ -40,11 +40,8 @@ namespace Muavin.Xml.Data
 
         // ===================== MODELS =====================
         public sealed record CompanyItem(string CompanyCode, string CompanyName);
-
-        // ✅ NEW: Company-Year modeli (opsiyonel UI’da göstermek istersen)
         public sealed record CompanyYearItem(string CompanyCode, int Year, DateTimeOffset CreatedAt, string? CreatedBy);
 
-        // (Opsiyonel) Fiş türü override modeli
         public sealed record FisTypeOverrideItem(
             string CompanyCode,
             int Year,
@@ -53,29 +50,22 @@ namespace Muavin.Xml.Data
             DateTimeOffset UpdatedAt,
             string? UpdatedBy
         );
-
+        public sealed record ImportBatchSummary(
+                long BatchId,
+                string CompanyCode,
+                int Year,
+                DateTimeOffset LoadedAt,
+                string SourceFile,
+                IReadOnlyList<int> Months,
+                int RowCount
+        );
         // ===================== ENUMS =====================
         public enum ImportReplaceMode
         {
-            /// <summary>
-            /// Aynı source_file + yıl(lar) için önce sil, sonra yaz.
-            /// (mevcut davranışın replaceExistingForSameSource = true ile uyumlu)
-            /// </summary>
             SameSource = 0,
-
-            /// <summary>
-            /// Payload içinde hangi yıllar varsa, o yılları komple silip yeniden yazar.
-            /// (daha agresif)
-            /// </summary>
             YearsInPayload = 1,
-
-            /// <summary>
-            /// Payload içinde hangi aylar varsa, sadece o ayları silip yeniden yazar.
-            /// (eksik ay sonradan geldi senaryosu için en doğru)
-            /// </summary>
             MonthsInPayload = 2
         }
-
 
         // ===================== SCHEMA =====================
         public async Task EnsureSchemaAsync(CancellationToken ct = default)
@@ -92,7 +82,6 @@ CREATE TABLE IF NOT EXISTS muavin.company(
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- ✅ Şirket-Yıl (dönem) tablosu (boş yıl bile tutulur)
 CREATE TABLE IF NOT EXISTS muavin.company_year(
     company_code text NOT NULL REFERENCES muavin.company(company_code) ON DELETE CASCADE,
     year         int  NOT NULL,
@@ -139,7 +128,7 @@ CREATE TABLE IF NOT EXISTS muavin.muavin_row(
     batch_id         bigint NULL
 );
 
--- ✅ Kolonlar eksikse ekle (idempotent)
+-- idempotent kolonlar
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS document_number  text NULL;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS fis_turu         text NULL;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS fis_tipi         text NULL;
@@ -152,10 +141,12 @@ ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS alacak           numeric(
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS tutar            numeric(18,2) NOT NULL DEFAULT 0;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS group_key        text NULL;
 ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS karsi_hesap      text NULL;
+ALTER TABLE muavin.muavin_row ADD COLUMN IF NOT EXISTS batch_id         bigint NULL;
 
 CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year ON muavin.muavin_row(company_code, period_year);
 CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year_month ON muavin.muavin_row(company_code, period_year, period_month);
 CREATE INDEX IF NOT EXISTS ix_muavin_row_company_year_source ON muavin.muavin_row(company_code, period_year, source_file);
+CREATE INDEX IF NOT EXISTS ix_muavin_row_batch ON muavin.muavin_row(batch_id);
 
 -- override tablo
 CREATE TABLE IF NOT EXISTS muavin.fis_type_override (
@@ -169,7 +160,27 @@ CREATE TABLE IF NOT EXISTS muavin.fis_type_override (
 );
 CREATE INDEX IF NOT EXISTS ix_fis_type_override_company_year
 ON muavin.fis_type_override(company_code, year);
+
+-- ✅ import_batch
+CREATE TABLE IF NOT EXISTS muavin.import_batch(
+    batch_id     bigserial PRIMARY KEY,
+    company_code text NOT NULL,
+    period_year  int  NOT NULL,
+    period_month int  NOT NULL,
+    source_file  text NOT NULL,
+    loaded_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- loaded_by sonradan eklendi (idempotent)
+ALTER TABLE muavin.import_batch ADD COLUMN IF NOT EXISTS loaded_by text NULL;
+
+CREATE INDEX IF NOT EXISTS ix_import_batch_company_y_m
+ON muavin.import_batch(company_code, period_year, period_month);
+
+CREATE INDEX IF NOT EXISTS ix_import_batch_loaded_at
+ON muavin.import_batch(loaded_at);
 ";
+
             await using var cmd = new NpgsqlCommand(sql, conn);
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -218,11 +229,6 @@ DO UPDATE SET company_name = EXCLUDED.company_name,
         }
 
         // ===================== YEARS (Company-Year) =====================
-
-        /// <summary>
-        /// ✅ Boş yıl bile ekler (kalıcı dönem).
-        /// company_year tablosuna upsert yapar.
-        /// </summary>
         public async Task EnsureCompanyYearAsync(
             string companyCode,
             int year,
@@ -278,9 +284,6 @@ ORDER BY year;";
             return years;
         }
 
-        /// <summary>
-        /// ✅ UI için: company_year + muavin_row union → her türlü yıl listede görünür.
-        /// </summary>
         public async Task<List<int>> GetYearsAsync(string companyCode, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(companyCode))
@@ -383,98 +386,75 @@ ORDER BY posting_date, kebir, hesap_kodu, entry_number, entry_counter;";
             return list;
         }
 
-        // ===================== DELETE HELPERS (✅ core fix) =====================
+        // ===================== ✅ import_batch helpers (TEK BATCH / IMPORT) =====================
 
         /// <summary>
-        /// ✅ Ay bazlı idempotent import için:
-        /// Bu şirket+year için sadece verilen ayları siler.
+        /// ✅ Bu import operasyonu için tek bir batch açar ve batch_id döner.
         /// </summary>
-        public async Task DeleteRowsByCompanyYearMonthsAsync(
-            string companyCode,
-            int year,
-            IEnumerable<int> months,
+        private static async Task<long> InsertImportBatchAsync(
             NpgsqlConnection conn,
             NpgsqlTransaction tx,
+            string companyCode,
+            int year,
+            int month,
+            string sourceFile,
+            string? loadedBy,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(companyCode))
-                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
-            if (year <= 0)
-                throw new ArgumentException("year geçersiz", nameof(year));
-            if (months is null)
-                throw new ArgumentNullException(nameof(months));
-            if (conn is null)
-                throw new ArgumentNullException(nameof(conn));
-            if (tx is null)
-                throw new ArgumentNullException(nameof(tx));
-
-            companyCode = companyCode.Trim();
-
-            var ms = months
-                .Where(m => m >= 1 && m <= 12)
-                .Distinct()
-                .OrderBy(m => m)
-                .ToArray();
-
-            if (ms.Length == 0) return;
-
             const string sql = @"
-DELETE FROM muavin.muavin_row
-WHERE company_code = @c
-  AND period_year  = @y
-  AND period_month = ANY(@months);";
+INSERT INTO muavin.import_batch(company_code, period_year, period_month, source_file, loaded_by)
+VALUES (@c, @y, @m, @src, @by)
+RETURNING batch_id;";
 
             await using var cmd = new NpgsqlCommand(sql, conn, tx);
             cmd.Parameters.AddWithValue("@c", companyCode);
             cmd.Parameters.AddWithValue("@y", year);
-            cmd.Parameters.AddWithValue("@months", ms);
+            cmd.Parameters.AddWithValue("@m", month);
+            cmd.Parameters.AddWithValue("@src", sourceFile);
+            cmd.Parameters.AddWithValue("@by", (object?)loadedBy ?? DBNull.Value);
 
-            await cmd.ExecuteNonQueryAsync(ct);
+            var obj = await cmd.ExecuteScalarAsync(ct);
+            return Convert.ToInt64(obj);
         }
 
         /// <summary>
-        /// ✅ Tam yıl “replace” istenirse (opsiyonel):
-        /// Bu şirket+year için tüm satırları siler.
+        /// ✅  Aynı batch_id altında diğer (year,month) satırlarını import_batch’e yazar.
         /// </summary>
-        public async Task DeleteRowsByCompanyYearAsync(
-            string companyCode,
-            int year,
+        private static async Task InsertImportBatchMonthLinkAsync(
             NpgsqlConnection conn,
             NpgsqlTransaction tx,
+            long batchId,
+            string companyCode,
+            int year,
+            int month,
+            string sourceFile,
+            string? loadedBy,
             CancellationToken ct = default)
         {
-            if (string.IsNullOrWhiteSpace(companyCode))
-                throw new ArgumentException("companyCode boş olamaz", nameof(companyCode));
-            if (year <= 0)
-                throw new ArgumentException("year geçersiz", nameof(year));
-            if (conn is null)
-                throw new ArgumentNullException(nameof(conn));
-            if (tx is null)
-                throw new ArgumentNullException(nameof(tx));
-
-            companyCode = companyCode.Trim();
-
             const string sql = @"
-DELETE FROM muavin.muavin_row
-WHERE company_code = @c
-  AND period_year  = @y;";
+INSERT INTO muavin.import_batch(batch_id, company_code, period_year, period_month, source_file, loaded_by)
+VALUES (@bid, @c, @y, @m, @src, @by);";
 
             await using var cmd = new NpgsqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@bid", batchId);
             cmd.Parameters.AddWithValue("@c", companyCode);
             cmd.Parameters.AddWithValue("@y", year);
+            cmd.Parameters.AddWithValue("@m", month);
+            cmd.Parameters.AddWithValue("@src", sourceFile);
+            cmd.Parameters.AddWithValue("@by", (object?)loadedBy ?? DBNull.Value);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
-        // ===================== BULK INSERT (✅ fixed) =====================
+        // ===================== BULK INSERT (✅ tek batch_id yazan sürüm) =====================
         public async Task BulkInsertRowsAsync(
             string companyCode,
             IEnumerable<MuavinRow> rows,
             string sourceFile,
-            bool replaceExistingForSameSource = true,   // (legacy param, aşağıda mode ile override edeceğiz)
+            bool replaceExistingForSameSource = true,
             string? companyName = null,
             CancellationToken ct = default,
-            ImportReplaceMode replaceMode = ImportReplaceMode.MonthsInPayload // ✅ default’u güvenli yap
+            ImportReplaceMode replaceMode = ImportReplaceMode.MonthsInPayload
         )
         {
             if (string.IsNullOrWhiteSpace(companyCode))
@@ -490,21 +470,25 @@ WHERE company_code = @c
             var list = rows.Where(r => r.PostingDate.HasValue).ToList();
             if (list.Count == 0) return;
 
-            // Yıl/Ay setleri
+            // year set
             var yearSet = list.Select(r => r.PostingDate!.Value.Year).Distinct().ToArray();
 
-            // ✅ Import edilen yılları company_year tablosunda garanti et
             foreach (var y in yearSet)
                 await EnsureCompanyYearAsync(companyCode, y, Environment.UserName, ct);
 
-            // group_key garanti
             foreach (var r in list)
                 if (string.IsNullOrWhiteSpace(r.GroupKey))
                     r.GroupKey = BuildGroupKey(r);
 
-            // Legacy param ile mode çakışmasın diye:
-            // Eğer caller eski paramı kullanıyorsa ama mode default geliyorsa, mode’a göre davranacağız.
-            // (replaceExistingForSameSource false verilirse ve mode SameSource ise delete yapmayız)
+            // payload YM set
+            var ymList = list
+                .Select(r => (y: r.PostingDate!.Value.Year, m: r.PostingDate!.Value.Month))
+                .Distinct()
+                .OrderBy(x => x.y).ThenBy(x => x.m)
+                .ToList();
+
+            if (ymList.Count == 0) return;
+
             await using var conn = await OpenAsync(ct);
             await using var tx = await conn.BeginTransactionAsync(ct);
 
@@ -536,22 +520,15 @@ WHERE company_code = @c
                 del.Parameters.AddWithValue("@years", yearSet);
                 await del.ExecuteNonQueryAsync(ct);
             }
-            else // ✅ MonthsInPayload (önerilen)
+            else // MonthsInPayload
             {
-                // payload’daki (year, month) kombinasyonlarını çıkar
-                var ym = list
-                    .Select(r => (y: r.PostingDate!.Value.Year, m: r.PostingDate!.Value.Month))
-                    .Distinct()
-                    .ToList();
-
-                // yıl bazlı delete (her yıl için month array)
                 const string delSql = @"
 DELETE FROM muavin.muavin_row
 WHERE company_code = @c
   AND period_year = @y
   AND period_month = ANY(@months);";
 
-                foreach (var g in ym.GroupBy(x => x.y))
+                foreach (var g in ymList.GroupBy(x => x.y))
                 {
                     var months = g.Select(x => x.m).Distinct().ToArray();
 
@@ -564,6 +541,19 @@ WHERE company_code = @c
             }
             // ===========================================================
 
+            // ✅ 1) Tek batch oluştur (ilk YM ile) + aynı batch altında diğer YM satırlarını import_batch’e bağla
+            var loadedBy = Environment.UserName;
+
+            var first = ymList[0];
+            var batchId = await InsertImportBatchAsync(conn, tx, companyCode, first.y, first.m, src, loadedBy, ct);
+
+            for (int i = 1; i < ymList.Count; i++)
+            {
+                var (y, m) = ymList[i];
+                await InsertImportBatchMonthLinkAsync(conn, tx, batchId, companyCode, y, m, src, loadedBy, ct);
+            }
+
+            // ✅ 2) COPY: batch_id alanını da yaz (TÜM satırlar aynı batchId)
             const string copySql = @"
 COPY muavin.muavin_row(
     company_code, period_year, period_month, source_file,
@@ -573,7 +563,8 @@ COPY muavin.muavin_row(
     kebir, hesap_kodu, hesap_adi,
     borc, alacak, tutar,
     group_key,
-    karsi_hesap
+    karsi_hesap,
+    batch_id
 )
 FROM STDIN (FORMAT BINARY);";
 
@@ -612,6 +603,8 @@ FROM STDIN (FORMAT BINARY);";
 
                     importer.Write((object?)r.GroupKey ?? DBNull.Value, NpgsqlDbType.Text);
                     importer.Write((object?)r.KarsiHesap ?? DBNull.Value, NpgsqlDbType.Text);
+
+                    importer.Write(batchId, NpgsqlDbType.Bigint);
                 }
 
                 await importer.CompleteAsync(ct);
@@ -756,5 +749,215 @@ WHERE company_code = @c AND year = @y AND group_key = @gk;";
             var doc = r.DocumentNumber ?? "";
             return string.IsNullOrWhiteSpace(doc) ? $"{no}|{d}" : $"{no}|{d}|DOC:{doc}";
         }
+
+        /// <summary> bu şirket + yıl için en son import edilen batch_id'yi döner
+        /// ui'da son importu al kısmı için kullanılacak 
+        /// </summary>
+        public async Task<long?> GetLastBatchIdAsync(
+            string companyCode,
+            int year,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode) || year <= 0)
+                return null;
+
+            companyCode = companyCode.Trim();
+
+            await using var conn = await OpenAsync(ct);
+
+            const string sql = @"
+SELECT batch_id
+FROM muavin.import_batch
+WHERE company_code = @c
+  AND period_year  = @y
+ORDER BY loaded_at DESC, batch_id DESC
+LIMIT 1;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@c", companyCode);
+            cmd.Parameters.AddWithValue("@y", year);
+
+            var obj = await cmd.ExecuteScalarAsync(ct);
+            return obj == null || obj == DBNull.Value ? null : Convert.ToInt64(obj);
+        }
+
+        /// <summary>
+        /// verilen batch_id için kaç muavin_row var
+        /// </summary>
+        public async Task<int> GetRowCountByBatchIdAsync(
+            long batchId,
+            CancellationToken ct = default)
+        {
+            if (batchId <= 0)
+                return 0;
+
+            await using var conn = await OpenAsync(ct);
+
+            const string sql = @"
+SELECT COUNT(*)
+FROM muavin.muavin_row
+WHERE batch_id = @bid;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@bid", batchId);
+
+            var obj = await cmd.ExecuteScalarAsync(ct);
+            return Convert.ToInt32(obj);
+        }
+
+        /// <summary>
+        /// ✅ Bu şirket + yıl için EN SON import edilen batch'i geri alır.
+        /// - muavin.muavin_row içinden batch_id ile siler
+        /// - muavin.import_batch içinden ilgili kayıtları siler
+        /// Transaction + güvenli geri dönüş.
+        /// 
+        /// Returns:
+        /// (success, batchId, deletedRows, message)
+        /// </summary>
+        public async Task<(bool ok, long? batchId, int deletedRows, string message)> UndoLastImportBatchAsync(
+            string companyCode,
+            int year,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode) || year <= 0)
+                return (false, null, 0, "Şirket kodu veya yıl geçersiz.");
+
+            companyCode = companyCode.Trim();
+
+            // 1) Son batch_id'yi bul
+            var lastBatchId = await GetLastBatchIdAsync(companyCode, year, ct);
+            if (!lastBatchId.HasValue || lastBatchId.Value <= 0)
+                return (false, null, 0, "Geri alınacak import bulunamadı (batch yok).");
+
+            // 2) Kaç satır silinecek (bilgi amaçlı)
+            var rowCount = await GetRowCountByBatchIdAsync(lastBatchId.Value, ct);
+
+            await using var conn = await OpenAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
+
+            try
+            {
+                // 3) muavin_row sil
+                const string delRowsSql = @"
+DELETE FROM muavin.muavin_row
+WHERE batch_id = @bid;";
+
+                await using (var cmd = new NpgsqlCommand(delRowsSql, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@bid", lastBatchId.Value);
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+
+                // 4) import_batch sil (o batch_id'ye ait tüm satırlar)
+                const string delBatchSql = @"
+DELETE FROM muavin.import_batch
+WHERE batch_id = @bid;";
+
+                int deletedBatchRows;
+                await using (var cmd = new NpgsqlCommand(delBatchSql, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@bid", lastBatchId.Value);
+                    deletedBatchRows = await cmd.ExecuteNonQueryAsync(ct);
+                }
+
+                await tx.CommitAsync(ct);
+
+                var msg =
+                    $"Geri alındı. BatchId={lastBatchId.Value}. " +
+                    $"Silinen muavin_row ≈ {rowCount}. " +
+                    $"Silinen import_batch kaydı = {deletedBatchRows}.";
+
+                return (true, lastBatchId.Value, rowCount, msg);
+            }
+            catch (Exception ex)
+            {
+                try { await tx.RollbackAsync(ct); } catch { /* ignore */ }
+                return (false, lastBatchId.Value, 0, "Undo hatası: " + ex.Message);
+            }
+        }
+
+        public async Task<ImportBatchSummary?> GetLastBatchSummaryAsync(
+    string companyCode,
+    int year,
+    CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(companyCode) || year <= 0)
+                return null;
+
+            companyCode = companyCode.Trim();
+
+            await using var conn = await OpenAsync(ct);
+
+            // 1️⃣ Son batch_id + metadata
+            const string batchSql = @"
+SELECT batch_id, source_file, loaded_at
+FROM muavin.import_batch
+WHERE company_code = @c
+  AND period_year  = @y
+ORDER BY loaded_at DESC, batch_id DESC
+LIMIT 1;
+";
+
+            long batchId;
+            string sourceFile;
+            DateTimeOffset loadedAt;
+
+            await using (var cmd = new NpgsqlCommand(batchSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@c", companyCode);
+                cmd.Parameters.AddWithValue("@y", year);
+
+                await using var rdr = await cmd.ExecuteReaderAsync(ct);
+                if (!await rdr.ReadAsync(ct))
+                    return null;
+
+                batchId = rdr.GetInt64(0);
+                sourceFile = rdr.GetString(1);
+                loadedAt = rdr.GetFieldValue<DateTimeOffset>(2);
+            }
+
+            // 2️⃣ Bu batch’e ait aylar
+            const string monthsSql = @"
+SELECT DISTINCT period_month
+FROM muavin.import_batch
+WHERE batch_id = @bid
+ORDER BY period_month;
+";
+
+            var months = new List<int>();
+            await using (var cmd = new NpgsqlCommand(monthsSql, conn)) 
+            {
+                cmd.Parameters.AddWithValue("@bid", batchId);
+                await using var rdr = await cmd.ExecuteReaderAsync(ct);
+                while (await rdr.ReadAsync(ct))
+                    months.Add(rdr.GetInt32(0));
+            }
+
+            // 3️⃣ Bu batch’teki satır sayısı
+            const string countSql = @"
+SELECT COUNT(*)
+FROM muavin.muavin_row
+WHERE batch_id = @bid;
+";
+
+            int rowCount;
+            await using (var cmd = new NpgsqlCommand(countSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@bid", batchId);
+                rowCount = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+            }
+
+            return new ImportBatchSummary(
+                batchId,
+                companyCode,
+                year,
+                loadedAt,
+                sourceFile,
+                months,
+                rowCount
+            );
+        }
+
+
     }
 }

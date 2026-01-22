@@ -8,5 +8,14 @@
             <Setter Property="HorizontalContentAlignment" Value="Right" />
             <Setter Property="TextBlock.TextAlignment" Value="Right" />
         </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="32"/>
+        </Style>
+
+        <Style TargetType="ToggleButton">
+            <Setter Property="MinHeight" Value="30"/>
+        </Style>
     </Application.Resources>
 </Application>

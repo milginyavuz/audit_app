@@ -243,6 +243,7 @@ namespace Muavin.Desktop.ViewModels
 
                         remaining -= pay;
 
+                        // Tutarı ilgili gün kolonuna ekle – HER ZAMAN POZİTİF
                         switch (bucketIndex)
                         {
                             case 0: report.Gun_0_30 += pay; break;

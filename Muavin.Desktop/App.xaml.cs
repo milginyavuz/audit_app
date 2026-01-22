@@ -138,7 +138,23 @@ namespace Muavin.Desktop
                 return;
             }
 
-
+            try
+            {   
+                BootLog("EnsureSchemaAsync starting");
+                Task.Run(() => _repo.EnsureSchemaAsync()).GetAwaiter().GetResult();
+                BootLog("EnsureSchemaAsync OK");
+            }
+            catch (Exception ex)
+            {
+                BootLog("EnsureSchemaAsync FAILED: " + ex);
+                MessageBox.Show(
+                    "Veritabanı şeması hazırlanamadı: \n" + ex.Message,
+                    "DB Şeması Hatası",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                Shutdown();
+                return;
+            }
 
 
             // =====================
