@@ -11,6 +11,9 @@ namespace Muavin.Xml.Parsing
         private void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+
+        public string? SourceFile { get; set; }
+
         // Header
         public string? EntryNumberRaw { get; set; }
         public string? EntryNumber { get; set; }
@@ -67,6 +70,17 @@ namespace Muavin.Xml.Parsing
             get => _karsiHesap;
             set { if (_karsiHesap != value) { _karsiHesap = value; OnPropertyChanged(); } }
         }
+
+
+        // Fiş bazında toplamlar (UI için)
+        public decimal FisTotalBorc { get; set; }
+        public decimal FisTotalAlacak { get; set; }
+
+        // Borç - Alacak (fiş bazında)
+        public decimal FisDiff { get; set; }
+
+        // Dengesiz mi?
+        public bool IsFisImbalanced { get; set; }
 
         // helper
         public string PostingDateText => PostingDate?.ToString("dd.MM.yyyy") ?? "";

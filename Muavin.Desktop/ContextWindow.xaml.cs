@@ -1,4 +1,6 @@
-﻿using System;
+﻿// ContextWindow.xaml.cs
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -9,6 +11,9 @@ using System.Windows.Input;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Muavin.Xml.Data;
 using Muavin.Xml.Parsing;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Muavin.Desktop
 {
@@ -31,6 +36,8 @@ namespace Muavin.Desktop
 
         public static readonly DependencyProperty ErrorTextProperty =
             DependencyProperty.Register(nameof(ErrorText), typeof(string), typeof(ContextWindow), new PropertyMetadata(""));
+
+
 
         public ContextWindow(ContextState state, DbMuavinRepository repo)
         {
@@ -189,7 +196,6 @@ namespace Muavin.Desktop
             }
         }
 
-
         /// <summary>
         /// DbMuavinRepository içinde dönem/context ekleyen bir metot varsa çağırır.
         /// Metot yoksa sessizce geçer (DB’de ayrı dönem tablosu yoksa zaten sorun değil).
@@ -257,16 +263,18 @@ namespace Muavin.Desktop
         private async void AddCompanyFromEdefterClicked(object sender, RoutedEventArgs e)
         {
             ErrorText = "";
+            List<string>? tempDirs = null;
 
             try
             {
                 var dlg = new CommonOpenFileDialog
                 {
-                    Title = "Şirket eklemek için XML / ZIP / TXT seç",
+                    Title = "Şirket eklemek için XML / ZIP / TXT seç (çoklu seçilebilir)",
                     EnsurePathExists = true,
-                    Multiselect = false,
+                    Multiselect = true,
                     IsFolderPicker = false
                 };
+
                 dlg.Filters.Add(new CommonFileDialogFilter("XML", "*.xml"));
                 dlg.Filters.Add(new CommonFileDialogFilter("ZIP", "*.zip"));
                 dlg.Filters.Add(new CommonFileDialogFilter("TXT", "*.txt"));
@@ -275,70 +283,93 @@ namespace Muavin.Desktop
                 if (dlg.ShowDialog() != CommonFileDialogResult.Ok)
                     return;
 
-                var picked = dlg.FileName;
-                var ext = Path.GetExtension(picked).ToLowerInvariant();
-
-                string? taxId = null;
-                string? title = null;
-
-                if (ext == ".txt")
+                var picks = dlg.FileNames?.Where(File.Exists).Distinct().ToList() ?? new List<string>();
+                if (picks.Count == 0)
                 {
-                    // TXT’den sadece VKN çıkar
-                    var info = TryParseCompanyFromTxt(picked);
-                    taxId = info.taxId;
-
-                    if (string.IsNullOrWhiteSpace(taxId))
-                    {
-                        ErrorText = "TXT içinde VKN (10 haneli) bulunamadı.";
-                        return;
-                    }
-
-                    // Ünvan manuel girilecek
-                    var manualName = Microsoft.VisualBasic.Interaction.InputBox(
-                        $"VKN: {taxId}\nŞirket adını girin:",
-                        "Şirket Adı",
-                        "");
-
-                    title = string.IsNullOrWhiteSpace(manualName) ? taxId : manualName.Trim();
-                }
-                else
-                {
-                    // XML veya ZIP -> XML çöz, sonra ParseCompanyInfo
-                    var xmlPath = ResolveAnyXml(picked);
-                    if (xmlPath == null)
-                    {
-                        ErrorText = "Seçimde XML bulunamadı.";
-                        return;
-                    }
-
-                    var info = _edefterParser.ParseCompanyInfo(xmlPath);
-
-                    // ParseCompanyInfo record alanları: TaxId + EntityName
-                    taxId = (info.TaxId ?? "").Trim();
-                    title = (info.EntityName ?? "").Trim();
-                }
-
-                if (string.IsNullOrWhiteSpace(taxId))
-                {
-                    ErrorText = "Vergi No (VKN/taxID) bulunamadı.";
+                    ErrorText = "Dosya seçilmedi.";
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(title))
-                    title = taxId; // fallback
+                // Şirket adı önerisi için “en uygun kaynak” (XML veya TXT veya ZIP->XML)
+                var resolved = ResolveCompanySourceFromSelection(picks, out tempDirs);
+                if (resolved == null)
+                {
+                    ErrorText = "Seçimde şirket bilgisi okunabilecek XML/TXT bulunamadı.";
+                    return;
+                }
 
-                // DB’ye yaz (muavin.company)
-                await _repo.EnsureCompanyAsync(taxId, title);
+                string? taxId = null;     // varsa VKN/taxId -> company_code olarak kullanacağız
+                string? autoTitle = null; // varsa InputBox default
+
+                if (resolved.Kind == CompanySourceKind.Txt)
+                {
+                    var info = TryParseCompanyFromTxt(resolved.Path);
+                    taxId = (info.taxId ?? "").Trim();
+                    autoTitle = (info.title ?? "").Trim();
+                    // ✅ VKN yoksa sorun değil
+                    if (string.IsNullOrWhiteSpace(taxId)) taxId = null;
+                }
+                else
+                {
+                    var info = _edefterParser.ParseCompanyInfo(resolved.Path);
+                    taxId = (info.TaxId ?? "").Trim();
+                    autoTitle = (info.EntityName ?? "").Trim();
+                    // ✅ taxId yoksa sorun değil
+                    if (string.IsNullOrWhiteSpace(taxId)) taxId = null;
+                }
+
+                // ✅ Her durumda şirket adını sor (auto-fill varsa doldur)
+                var suggested = string.IsNullOrWhiteSpace(autoTitle) ? "" : autoTitle.Trim();
+
+                var manualName = Microsoft.VisualBasic.Interaction.InputBox(
+                    "Şirket adını kontrol edin / gerekirse düzeltin:",
+                    "Şirket Adı",
+                    suggested
+                );
+
+                if (string.IsNullOrWhiteSpace(manualName))
+                {
+                    ErrorText = "Şirket adı zorunlu. İsterseniz yeniden deneyin.";
+                    return;
+                }
+
+                var title = manualName.Trim().Replace("\r", " ").Replace("\n", " ").Trim();
+                if (title.Length > 200) title = title.Substring(0, 200).Trim();
+
+                // ✅ Duplicate kontrol: benzer isimli şirket var mı?
+                var existing = await CheckDuplicateAndPickExistingAsync(title);
+                if (existing != null)
+                {
+                    // kullanıcı mevcut şirketi seçti -> yeni ekleme yapma, onu seç
+                    await LoadCompaniesAsync();
+                    cbCompany.SelectedValue = existing.CompanyCode;
+
+                    _state.CompanyCode = existing.CompanyCode;
+                    _state.CompanyName = existing.CompanyName;
+
+                    SelectedCompanyCode = existing.CompanyCode;
+                    SelectedCompanyName = existing.CompanyName;
+
+                    tbYear.Focus();
+                    tbYear.SelectAll();
+                    return;
+                }
+
+
+                // ✅ company_code: VKN varsa onu kullan, yoksa hash code üret
+                var companyCode = taxId ?? BuildCompanyCodeFromName(title);
+
+                await _repo.EnsureCompanyAsync(companyCode, title);
 
                 // Listeyi yenile ve yeni şirketi seç
                 await LoadCompaniesAsync();
-                cbCompany.SelectedValue = taxId;
+                cbCompany.SelectedValue = companyCode;
 
-                // state’i de güncelle
-                _state.CompanyCode = taxId;
+                // state güncelle
+                _state.CompanyCode = companyCode;
                 _state.CompanyName = title;
 
-                SelectedCompanyCode = taxId;
+                SelectedCompanyCode = companyCode;
                 SelectedCompanyName = title;
 
                 tbYear.Focus();
@@ -348,6 +379,232 @@ namespace Muavin.Desktop
             {
                 ErrorText = "Yeni şirket eklenemedi: " + ex.Message;
             }
+            finally
+            {
+                CleanupTempDirs(tempDirs);
+            }
+        }
+
+        // TXT parser (aynı namespace: Muavin.Xml.Parsing)
+        private readonly TxtMuavinParser _txtParser = new();
+
+        private async void ImportTxtClicked(object sender, RoutedEventArgs e)
+        {
+            ErrorText = "";
+
+            try
+            {
+                if (cbCompany.SelectedItem is not DbMuavinRepository.CompanyItem company)
+                {
+                    ErrorText = "Önce şirket seçin.";
+                    return;
+                }
+
+                if (!int.TryParse(tbYear.Text?.Trim(), out var selectedYear) || selectedYear <= 0)
+                {
+                    ErrorText = "Yıl geçersiz.";
+                    return;
+                }
+
+                var dlg = new CommonOpenFileDialog
+                {
+                    Title = "TXT seç (muavin import)",
+                    EnsurePathExists = true,
+                    Multiselect = true,
+                    IsFolderPicker = false
+                };
+                dlg.Filters.Add(new CommonFileDialogFilter("TXT", "*.txt"));
+
+                if (dlg.ShowDialog() != CommonFileDialogResult.Ok)
+                    return;
+
+                var files = dlg.FileNames?.Where(File.Exists).Distinct().ToList() ?? new List<string>();
+                if (files.Count == 0)
+                {
+                    ErrorText = "Dosya seçilmedi.";
+                    return;
+                }
+
+                foreach (var f in files)
+                    await ImportTxtOneAsync(company.CompanyCode, company.CompanyName, selectedYear, f);
+
+                MessageBox.Show("TXT import tamamlandı.", "Muavin", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                ErrorText = "TXT import hatası: " + ex.Message;
+            }
+        }
+
+        private async Task ImportTxtOneAsync(string companyCode, string companyName, int selectedYear, string txtPath)
+        {
+            int py, pm;
+            var rows = _txtParser.Parse(txtPath, companyCode, out py, out pm);
+            var meta = _txtParser.LastMeta;
+
+            if (rows.Count == 0)
+            {
+                var ask = MessageBox.Show(
+                    $"TXT satır çıkmadı.\nDosya: {Path.GetFileName(txtPath)}\nDelimiter: {meta.Delimiter}\nParsed:{meta.ParsedRowCount} Skipped:{meta.SkippedRowCount}\nAtlayalım mı?",
+                    "TXT Kontrol",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (ask == MessageBoxResult.Yes) return;
+                throw new InvalidOperationException("TXT parse sonucu boş.");
+            }
+
+            if (meta.DistinctYearMonthCount >= 2)
+            {
+                var ask = MessageBox.Show(
+                    $"TXT birden fazla ay içeriyor.\nDosya: {Path.GetFileName(txtPath)}\nMin:{meta.MinDate:yyyy-MM-dd} Max:{meta.MaxDate:yyyy-MM-dd}\nDevam?",
+                    "TXT Kontrol",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (ask != MessageBoxResult.Yes) return;
+            }
+
+            var total = meta.ParsedRowCount + meta.SkippedRowCount;
+            if (total > 0)
+            {
+                var skipRate = (double)meta.SkippedRowCount / total;
+                if (skipRate >= 0.20)
+                {
+                    var ask = MessageBox.Show(
+                        $"TXT atlanan satır oranı yüksek (~{skipRate:P0}).\nDosya: {Path.GetFileName(txtPath)}\nParsed:{meta.ParsedRowCount} Skipped:{meta.SkippedRowCount}\nDevam?",
+                        "TXT Kontrol",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (ask != MessageBoxResult.Yes) return;
+                }
+            }
+
+            if (meta.MinDate.HasValue && meta.MinDate.Value.Year != selectedYear)
+            {
+                var ask = MessageBox.Show(
+                    $"Seçili yıl ({selectedYear}) ile TXT yılı ({meta.MinDate.Value.Year}) farklı.\nDosya: {Path.GetFileName(txtPath)}\nDevam?",
+                    "TXT Kontrol",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (ask != MessageBoxResult.Yes) return;
+            }
+
+            await _repo.BulkInsertRowsAsync(
+                companyCode: companyCode,
+                rows: rows,
+                sourceFile: txtPath,
+                replaceExistingForSameSource: true,
+                companyName: companyName,
+                replaceMode: DbMuavinRepository.ImportReplaceMode.MonthsInPayload
+            );
+        }
+
+
+
+
+        // ✅ Ünvanı “sadece şirket adı” olarak güvenli almak için: kullanıcıya onay + düzeltme
+        // - default: autoTitle (varsa) yoksa taxId
+        // - kullanıcı boş bırakırsa default kullanılır
+        // Not: InputBox Cancel'da çoğunlukla "" döndürüyor; burada "" -> default'a düşer.
+        // Gerçek "iptal" akışı istersen ayrıca custom WPF dialog yazabiliriz.
+        private static string? PromptCompanyName(string taxId, string? autoTitle)
+        {
+            var def = string.IsNullOrWhiteSpace(autoTitle) ? taxId : autoTitle.Trim();
+
+            var input = Microsoft.VisualBasic.Interaction.InputBox(
+                $"VKN: {taxId}\nŞirket adı (ünvan). Otomatik yakalandıysa kontrol edin, değilse yazın:",
+                "Şirket Ünvanı Onayı",
+                def
+            );
+
+            if (input == null) return null;
+
+            var s = input.Trim();
+
+            // kullanıcı boş geçtiyse default'a düş
+            if (string.IsNullOrWhiteSpace(s))
+                return def;
+
+            return s;
+        }
+
+        // temp klasör cleanup (ZIP açarken oluşturulan klasörler için)
+        private static void CleanupTempDirs(List<string>? tempDirs)
+        {
+            if (tempDirs == null || tempDirs.Count == 0) return;
+
+            foreach (var d in tempDirs)
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(d) && Directory.Exists(d))
+                        Directory.Delete(d, recursive: true);
+                }
+                catch
+                {
+                    // ignore (temp cleanup fail should not crash)
+                }
+            }
+        }
+
+        private enum CompanySourceKind { Xml, Txt }
+
+        private sealed record CompanySource(CompanySourceKind Kind, string Path);
+
+        private CompanySource? ResolveCompanySourceFromSelection(List<string> picks, out List<string>? tempDirs)
+        {
+            tempDirs = new List<string>();
+
+            // 1) Önce direkt XML'ler: TaxId bulunanı yakala
+            var xmls = picks
+                .Where(p => Path.GetExtension(p).Equals(".xml", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var x in xmls)
+            {
+                try
+                {
+                    var info = _edefterParser.ParseCompanyInfo(x);
+                    if (!string.IsNullOrWhiteSpace(info.TaxId))
+                        return new CompanySource(CompanySourceKind.Xml, x);
+                }
+                catch { /* ignore */ }
+            }
+
+            // 2) ZIP: içinden XML çıkar, TaxId bulunanı yakala
+            var zips = picks
+                .Where(p => Path.GetExtension(p).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var z in zips)
+            {
+                try
+                {
+                    var temp = Path.Combine(Path.GetTempPath(), "Muavin_CompanyZip_" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(temp);
+                    System.IO.Compression.ZipFile.ExtractToDirectory(z, temp, overwriteFiles: true);
+                    tempDirs.Add(temp);
+
+                    var xmlInZipAll = Directory.EnumerateFiles(temp, "*.xml", SearchOption.AllDirectories).ToList();
+
+                    foreach (var x in xmlInZipAll)
+                    {
+                        try
+                        {
+                            var info = _edefterParser.ParseCompanyInfo(x);
+                            if (!string.IsNullOrWhiteSpace(info.TaxId))
+                                return new CompanySource(CompanySourceKind.Xml, x);
+                        }
+                        catch { /* ignore */ }
+                    }
+                }
+                catch { /* ignore */ }
+            }
+
+            // 3) TXT fallback
+            var txt = picks.FirstOrDefault(p => Path.GetExtension(p).Equals(".txt", StringComparison.OrdinalIgnoreCase));
+            if (txt != null) return new CompanySource(CompanySourceKind.Txt, txt);
+
+            return null;
         }
 
         private static string? ResolveAnyXml(string path)
@@ -378,7 +635,7 @@ namespace Muavin.Desktop
 
         // Ünvan yakalamaya çalış: "UNVAN: ..." / "ÜNVAN: ..." / "FIRMA: ..." gibi
         private static readonly Regex RxTitleLine =
-            new Regex(@"(?im)^(?:\s*(?:unvan|ünvan|firma|şirket|company)\s*[:\-]\s*)(.+)\s*$",
+            new Regex(@"(?im)^(?:\s*(?:ticaret\s*unvani|unvan|ünvan|firma|şirket|sirket|company|organizationidentifier|organization\s*identifier)\s*[:\-]\s*)(.+)\s*$",
                       RegexOptions.Compiled);
 
         private static (string? taxId, string? title) TryParseCompanyFromTxt(string txtPath)
@@ -435,7 +692,6 @@ namespace Muavin.Desktop
             public event EventHandler? CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
-
 
         private async void PickYearClicked(object sender, RoutedEventArgs e)
         {
@@ -572,6 +828,164 @@ namespace Muavin.Desktop
 
             var dialogResult = w.ShowDialog();
             return dialogResult == true ? result : null;
+        }
+
+        private async void ImportInputsClicked(object sender, RoutedEventArgs e)
+        {
+            ErrorText = "";
+            List<string>? tempDirs = null;
+
+            try
+            {
+                if (cbCompany.SelectedItem is not DbMuavinRepository.CompanyItem company)
+                {
+                    ErrorText = "Önce şirket seçin.";
+                    return;
+                }
+
+                if (!int.TryParse(tbYear.Text?.Trim(), out var selectedYear) || selectedYear <= 0)
+                {
+                    ErrorText = "Yıl geçersiz.";
+                    return;
+                }
+
+                var dlg = new CommonOpenFileDialog
+                {
+                    Title = "İçe Aktar: XML / ZIP / TXT seç (çoklu seçilebilir)",
+                    EnsurePathExists = true,
+                    Multiselect = true,
+                    IsFolderPicker = false
+                };
+
+                dlg.Filters.Add(new CommonFileDialogFilter("XML", "*.xml"));
+                dlg.Filters.Add(new CommonFileDialogFilter("ZIP", "*.zip"));
+                dlg.Filters.Add(new CommonFileDialogFilter("TXT", "*.txt"));
+                dlg.Filters.Add(new CommonFileDialogFilter("Tümü", "*.*"));
+
+                if (dlg.ShowDialog() != CommonFileDialogResult.Ok)
+                    return;
+
+                var picks = dlg.FileNames?.Where(File.Exists).Distinct().ToList() ?? new List<string>();
+                if (picks.Count == 0)
+                {
+                    ErrorText = "Dosya seçilmedi.";
+                    return;
+                }
+
+                var companyCode = (company.CompanyCode ?? "").Trim();
+                var companyName = (company.CompanyName ?? "").Trim();
+
+                if (string.IsNullOrWhiteSpace(companyCode))
+                {
+                    ErrorText = "Şirket kodu boş.";
+                    return;
+                }
+
+                // TXT import
+                var txtFiles = picks.Where(p => Path.GetExtension(p).Equals(".txt", StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var f in txtFiles)
+                    await ImportTxtOneAsync(companyCode, companyName, selectedYear, f);
+
+                // TODO: XML/ZIP import’u senin importerına bağlayacağız
+                // var xmlFiles = ...
+                // await ImportXmlZipAsync(companyCode, companyName, selectedYear, xmlFiles);
+
+                if (txtFiles.Count > 0)
+                    MessageBox.Show("İçe aktarma tamamlandı.", "Muavin", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                tbYear.Focus();
+                tbYear.SelectAll();
+            }
+            catch (Exception ex)
+            {
+                ErrorText = "İçe aktarma hatası: " + ex.Message;
+            }
+            finally
+            {
+                CleanupTempDirs(tempDirs);
+            }
+        }
+
+
+        private static string? PromptCompanyNameStrict(string companyCode, string? autoTitle)
+        {
+            var suggested = string.IsNullOrWhiteSpace(autoTitle) ? "" : autoTitle.Trim();
+
+            var input = Microsoft.VisualBasic.Interaction.InputBox(
+                "Şirket adını kontrol edin / gerekirse düzeltin:",
+                "Şirket Adı",
+                suggested
+            );
+
+            if (input == null) return null; // pratikte gelmeyebilir ama kalsın
+
+            var name = input.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return null; // ✅ zorunlu
+
+            // ekstra güvenlik: sadece tek satır, aşırı uzun değil
+            name = name.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (name.Length > 200) name = name.Substring(0, 200).Trim();
+
+            return name;
+        }
+
+        // VKN yoksa stabil company_code üret (C- + 12 hex)
+        private static string BuildCompanyCodeFromName(string name)
+        {
+            var norm = NormalizeNameForCode(name);
+
+            using var sha = SHA256.Create();
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(norm));
+            var hex = Convert.ToHexString(bytes).ToLowerInvariant();
+
+            return "C-" + hex.Substring(0, 12);
+        }
+
+        private static string NormalizeNameForCode(string s)
+        {
+            s = (s ?? "").Trim().ToLowerInvariant()
+                .Replace('ı', 'i').Replace('ğ', 'g').Replace('ü', 'u')
+                .Replace('ş', 's').Replace('ö', 'o').Replace('ç', 'c');
+
+            var sb = new StringBuilder(s.Length);
+            foreach (var ch in s)
+            {
+                if (char.IsLetterOrDigit(ch)) sb.Append(ch);
+                else if (char.IsWhiteSpace(ch)) sb.Append(' ');
+            }
+
+            return string.Join(" ", sb.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private async Task<DbMuavinRepository.CompanyItem?> CheckDuplicateAndPickExistingAsync(string companyName)
+        {
+            var candidates = await _repo.FindCompaniesByNameAsync(companyName, limit: 10);
+
+            if (candidates == null || candidates.Count == 0)
+                return null;
+
+            // Liste: "NAME  [CODE]" formatı
+            var items = candidates
+                .Select(c => $"{c.CompanyName}  [{c.CompanyCode}]")
+                .ToList();
+
+            // En üste “Yeni oluştur” seçeneği koy
+            items.Insert(0, "➕ Yeni şirket olarak ekle");
+
+            var picked = SelectFromList("Benzer şirket bulundu", "Mevcut kaydı mı kullanmak istersiniz?", items);
+            if (picked == null) return null;
+
+            if (picked.StartsWith("➕"))
+                return null; // yeni oluştur
+
+            // seçilen satırdan code parse et: "... [CODE]"
+            var ix1 = picked.LastIndexOf('[');
+            var ix2 = picked.LastIndexOf(']');
+            if (ix1 < 0 || ix2 <= ix1) return null;
+
+            var code = picked.Substring(ix1 + 1, ix2 - ix1 - 1).Trim();
+            return candidates.FirstOrDefault(c => string.Equals(c.CompanyCode, code, StringComparison.Ordinal));
         }
 
 

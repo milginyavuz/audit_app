@@ -10,11 +10,17 @@ namespace Muavin.Desktop.ViewModels
         public string HesapKodu { get; set; } = string.Empty;
         public string HesapAdi { get; set; } = string.Empty;
 
+        // Period hareketleri (Start-End arası)
         public decimal Borc { get; set; }
         public decimal Alacak { get; set; }
 
+        // Closing bakiyeyi şu an UI’da gösterdiğin alanlar (borç/alacak bakiyesi)
         public decimal BorcBakiye { get; set; }
         public decimal AlacakBakiye { get; set; }
+
+        // ✅ Yeni: Opening / Closing net bakiyeler (drill-down ve denetim için kritik)
+        public decimal OpeningNetBakiye { get; set; }   // StartDate öncesi net (Borc-Alacak)
+        public decimal ClosingNetBakiye { get; set; }   // EndDate dahil net (Borc-Alacak)
 
         // geriye dönük uyumluluk için tutuluyor
         public decimal DuzenlenmisBorcBakiye { get; set; }

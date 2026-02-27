@@ -141,6 +141,16 @@
                         Click="AddPeriodClicked"
                         BorderBrush="#FFE6E6E6"
                         BorderThickness="1"/>
+                
+                <Button Grid.Column="3"
+                        Content="İçe Aktar (XML/ZIP/TXT)"
+                        Height="30"
+                        MinWidth="170"
+                        Padding="12,6"
+                        HorizontalAlignment="Left"
+                        Click="ImportInputsClicked"
+                        BorderBrush="#FFE6E6E6"
+                        BorderThickness="1"/>
 
                 <!-- Right bottom: Exit/Ok -->
                 <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">

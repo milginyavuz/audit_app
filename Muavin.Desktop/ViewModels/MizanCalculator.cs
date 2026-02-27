@@ -31,15 +31,23 @@ namespace Muavin.Desktop.ViewModels
             if (!validRows.Any())
                 return Enumerable.Empty<MizanRow>();
 
+            // ✅ Period: Start-End arası
             var periodRows = validRows
                 .Where(r => r.PostingDate!.Value.Date >= start &&
                             r.PostingDate!.Value.Date <= end)
                 .ToList();
 
+            // ✅ Closing hesaplamak için: EndDate'e kadar (dahil)
             var allToEndRows = validRows
                 .Where(r => r.PostingDate!.Value.Date <= end)
                 .ToList();
 
+            // ✅ Opening hesaplamak için: StartDate'ten önce
+            var rowsBeforeStart = validRows
+                .Where(r => r.PostingDate!.Value.Date < start)
+                .ToList();
+
+            // Kebir grupları (closing evreni üzerinden)
             var kebirGroups = allToEndRows
                 .GroupBy(r => (r.Kebir ?? string.Empty).Trim())
                 .Where(g => !string.IsNullOrEmpty(g.Key))
@@ -51,27 +59,32 @@ namespace Muavin.Desktop.ViewModels
             {
                 string kebirCode = kebirGroup.Key;
 
+                // Period rows for this kebir
                 var kebirPeriodRows = periodRows
-                    .Where(r => string.Equals(
-                        (r.Kebir ?? string.Empty).Trim(),
-                        kebirCode,
-                        StringComparison.OrdinalIgnoreCase))
+                    .Where(r => string.Equals((r.Kebir ?? "").Trim(), kebirCode, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 decimal kebirDonemBorc = kebirPeriodRows.Sum(r => r.Borc);
                 decimal kebirDonemAlacak = kebirPeriodRows.Sum(r => r.Alacak);
                 bool kebirIsWorking = kebirDonemBorc != 0m || kebirDonemAlacak != 0m;
 
-                decimal kebirBorcToplam = kebirGroup.Sum(r => r.Borc);
-                decimal kebirAlacakToplam = kebirGroup.Sum(r => r.Alacak);
-                decimal kebirNet = kebirBorcToplam - kebirAlacakToplam;
+                // ✅ Closing net (EndDate'e kadar)
+                decimal kebirClosingBorcToplam = kebirGroup.Sum(r => r.Borc);
+                decimal kebirClosingAlacakToplam = kebirGroup.Sum(r => r.Alacak);
+                decimal kebirClosingNet = kebirClosingBorcToplam - kebirClosingAlacakToplam;
 
+                // ✅ Opening net (StartDate öncesi)
+                var kebirBeforeRows = rowsBeforeStart
+                    .Where(r => string.Equals((r.Kebir ?? "").Trim(), kebirCode, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                decimal kebirOpeningNet = kebirBeforeRows.Sum(r => r.Borc) - kebirBeforeRows.Sum(r => r.Alacak);
+
+                // UI'da gösterdiğin bakiye: closing net'i borç/alacak bakiyeye böl
                 decimal kebirBorcBakiye = 0m;
                 decimal kebirAlacakBakiye = 0m;
-                if (kebirNet > 0)
-                    kebirBorcBakiye = kebirNet;
-                else if (kebirNet < 0)
-                    kebirAlacakBakiye = -kebirNet;
+                if (kebirClosingNet > 0) kebirBorcBakiye = kebirClosingNet;
+                else if (kebirClosingNet < 0) kebirAlacakBakiye = -kebirClosingNet;
 
                 if (hareketDurumu == HareketDurumu.SadeceIsleyen && !kebirIsWorking)
                     goto SkipKebirHeader;
@@ -90,7 +103,6 @@ namespace Muavin.Desktop.ViewModels
                     ?? string.Empty;
 
                 // asıl HesapPlani.txt den kebir adı
-                // 8 ve 9 için otomatik özel başlık
                 string kebirHesapAdi = AccountPlan.GetNameForHeader(kebirCode, fallbackKebirAdi);
 
                 var kebirRow = new MizanRow
@@ -98,11 +110,20 @@ namespace Muavin.Desktop.ViewModels
                     Kebir = kebirCode,
                     HesapKodu = kebirCode,
                     HesapAdi = kebirHesapAdi,
+
+                    // Period
                     Borc = kebirDonemBorc,
                     Alacak = kebirDonemAlacak,
+
+                    // Closing (UI)
                     BorcBakiye = kebirBorcBakiye,
                     AlacakBakiye = kebirAlacakBakiye,
 
+                    // ✅ Opening/Closing net (denetim için)
+                    OpeningNetBakiye = kebirOpeningNet,
+                    ClosingNetBakiye = kebirClosingNet,
+
+                    // geriye dönük
                     DuzenlenmisBorcBakiye = kebirBorcBakiye,
                     DuzenlenmisAlacakBakiye = kebirAlacakBakiye,
 
@@ -134,11 +155,9 @@ namespace Muavin.Desktop.ViewModels
                     if (string.Equals(hesapKodu, kebirCode, StringComparison.OrdinalIgnoreCase))
                         continue;
 
+                    // Period for account
                     var periodForAccount = kebirPeriodRows
-                        .Where(r => string.Equals(
-                            (r.HesapKodu ?? string.Empty).Trim(),
-                            hesapKodu,
-                            StringComparison.OrdinalIgnoreCase))
+                        .Where(r => string.Equals((r.HesapKodu ?? "").Trim(), hesapKodu, StringComparison.OrdinalIgnoreCase))
                         .ToList();
 
                     decimal donemBorc = periodForAccount.Sum(r => r.Borc);
@@ -150,27 +169,44 @@ namespace Muavin.Desktop.ViewModels
                     if (hareketDurumu == HareketDurumu.SadeceIslemeyen && isWorking)
                         continue;
 
-                    decimal borcToplam = accountGroup.Sum(r => r.Borc);
-                    decimal alacakToplam = accountGroup.Sum(r => r.Alacak);
-                    decimal net = borcToplam - alacakToplam;
+                    // Closing net for account (EndDate'e kadar)
+                    decimal closingBorcToplam = accountGroup.Sum(r => r.Borc);
+                    decimal closingAlacakToplam = accountGroup.Sum(r => r.Alacak);
+                    decimal closingNet = closingBorcToplam - closingAlacakToplam;
 
+                    // Opening net for account (StartDate öncesi)
+                    var beforeForAccount = rowsBeforeStart
+                        .Where(r => string.Equals((r.Kebir ?? "").Trim(), kebirCode, StringComparison.OrdinalIgnoreCase))
+                        .Where(r => string.Equals((r.HesapKodu ?? "").Trim(), hesapKodu, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    decimal openingNet = beforeForAccount.Sum(r => r.Borc) - beforeForAccount.Sum(r => r.Alacak);
+
+                    // UI bakiye (closing)
                     decimal borcBakiye = 0m;
                     decimal alacakBakiye = 0m;
-                    if (net > 0)
-                        borcBakiye = net;
-                    else if (net < 0)
-                        alacakBakiye = -net;
+                    if (closingNet > 0) borcBakiye = closingNet;
+                    else if (closingNet < 0) alacakBakiye = -closingNet;
 
                     var row = new MizanRow
                     {
                         Kebir = kebirCode,
                         HesapKodu = hesapKodu,
-                        HesapAdi = hesapAdi, // alt hesap adları aynen kalsın
+                        HesapAdi = hesapAdi,
+
+                        // Period
                         Borc = donemBorc,
                         Alacak = donemAlacak,
+
+                        // Closing UI
                         BorcBakiye = borcBakiye,
                         AlacakBakiye = alacakBakiye,
 
+                        // ✅ Opening/Closing net
+                        OpeningNetBakiye = openingNet,
+                        ClosingNetBakiye = closingNet,
+
+                        // geriye dönük
                         DuzenlenmisBorcBakiye = borcBakiye,
                         DuzenlenmisAlacakBakiye = alacakBakiye,
 

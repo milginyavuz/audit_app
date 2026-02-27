@@ -16,6 +16,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Data;
+using System.Globalization;
+using System.Reflection;
+
 
 namespace Muavin.Desktop.ViewModels
 {
@@ -36,6 +39,8 @@ namespace Muavin.Desktop.ViewModels
         [ObservableProperty]
         private MuavinRow? _selectedRow;
 
+        [ObservableProperty] private string? _aciklamaAra;
+
         // ========= (Toolbar için) MANUEL FİŞ TÜRÜ (UI seçimi) =========
         private string? _selectedFisTuru;
         public string? SelectedFisTuru
@@ -44,13 +49,243 @@ namespace Muavin.Desktop.ViewModels
             set => SetProperty(ref _selectedFisTuru, value);
         }
 
-        public IReadOnlyList<string> FisTuruOptions { get; } =
-            new[] { "Normal", "Açılış", "Kapanış" };
+        // ================== ✅ DATA ORIGIN (DB vs PREVIEW) ==================
+        private enum DataOrigin
+        {
+            None = 0,
+            Preview = 1,
+            Database = 2
+        }
 
-        // ✅ Eski XAML/ComboBox binding’leri için alias (yaygın binding adı)
+
+        // ===============================
+        // ✅ PREVIEW SNAPSHOT CACHE (IMPORT GARANTİ)
+        // DB yükleme / filtre / ekran temizleme gibi işlemler _allRows'u etkileyebilir.
+        // Import için güvenli kaynak: "preview anında alınan snapshot".
+        // ===============================
+        private readonly List<MuavinRow> _previewRowsCache = new();
+        private readonly List<string> _previewInputsCache = new();
+
+        private bool HasPreviewCache => _previewRowsCache.Count > 0;
+
+        private void CacheCurrentPreviewSnapshot()
+        {
+            try
+            {
+                _previewRowsCache.Clear();
+                _previewRowsCache.AddRange(_allRows);
+
+                _previewInputsCache.Clear();
+                if (_selectedInputs is { Count: > 0 })
+                    _previewInputsCache.AddRange(_selectedInputs);
+
+                Logger.WriteLine($"[PREVIEW] cache_saved has={HasPreviewCache} rows={_previewRowsCache.Count} inputs={_previewInputsCache.Count}");
+            }
+            catch (Exception ex)
+            {
+                _previewRowsCache.Clear();
+                _previewInputsCache.Clear();
+                Logger.WriteLine("[PREVIEW] cache_saved ERROR: " + ex);
+            }
+        }
+
+        private void ClearPreviewCache()
+        {
+            _previewRowsCache.Clear();
+            _previewInputsCache.Clear();
+        }
+
+
+
+        private DataOrigin _dataOrigin = DataOrigin.None;
+
+        // ================== ✅ QUICK FILTER HELPERS (GENEL) ==================
+        private static readonly CultureInfo TR = CultureInfo.GetCultureInfo("tr-TR");
+        private static readonly Dictionary<string, string> QuickFilterHeaderMap =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Kayıt No"] = nameof(MuavinRow.EntryCounter),
+                ["Kebir"] = nameof(MuavinRow.Kebir),
+                ["Hesap Kodu"] = nameof(MuavinRow.HesapKodu),
+                ["Hesap Adı"] = nameof(MuavinRow.HesapAdi),
+                ["Fiş Tarihi"] = nameof(MuavinRow.PostingDate),
+                ["Fiş Numarası"] = nameof(MuavinRow.EntryNumber),
+                ["Fiş Türü"] = nameof(MuavinRow.FisTuru),
+                ["Açıklama"] = nameof(MuavinRow.Aciklama),
+                ["Borç"] = nameof(MuavinRow.Borc),
+                ["Alacak"] = nameof(MuavinRow.Alacak),
+                ["Tutar"] = nameof(MuavinRow.Tutar),
+                ["Bakiye"] = nameof(MuavinRow.RunningBalance),
+                ["Karşı Hesap"] = nameof(MuavinRow.KarsiHesap),
+            };
+
+
+        private static string BuildInputsListTextCore(IReadOnlyList<string> inputs, int maxItems = 25)
+        {
+            if (inputs == null || inputs.Count == 0)
+                return "• (dosya seçilmedi)";
+
+            var files = inputs
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(p =>
+                {
+                    try { return Path.GetFileName(p); }
+                    catch { return p; }
+                })
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToList();
+
+            if (files.Count == 0)
+                return "• (dosya seçilmedi)";
+
+            if (files.Count <= maxItems)
+                return "• " + string.Join("\n• ", files);
+
+            var head = files.Take(maxItems).ToList();
+            var rest = files.Count - maxItems;
+
+            return "• " + string.Join("\n• ", head) + $"\n• … (+{rest} dosya daha)";
+        }
+
+        private static string BuildInputsSummaryLineCore(IReadOnlyList<string> inputs)
+        {
+            if (inputs == null || inputs.Count == 0)
+                return "Seçim: 0 dosya";
+
+            int xml = 0, txt = 0, zip = 0, other = 0;
+
+            foreach (var p in inputs.Where(x => !string.IsNullOrWhiteSpace(x)))
+            {
+                var ext = "";
+                try { ext = Path.GetExtension(p).ToLowerInvariant(); } catch { }
+
+                if (ext == ".xml") xml++;
+                else if (ext == ".txt") txt++;
+                else if (ext == ".zip") zip++;
+                else other++;
+            }
+
+            var total = inputs.Count;
+            var parts = new List<string> { $"Toplam {total} dosya" };
+            if (xml > 0) parts.Add($"XML: {xml}");
+            if (txt > 0) parts.Add($"TXT: {txt}");
+            if (zip > 0) parts.Add($"ZIP: {zip}");
+            if (other > 0) parts.Add($"Diğer: {other}");
+
+            return "Seçim: " + string.Join(" | ", parts);
+        }
+
+        private static string BuildSourceDisplayNameFrom(IReadOnlyList<string> inputs)
+        {
+            if (inputs == null || inputs.Count == 0) return "-";
+            if (inputs.Count == 1)
+            {
+                try { return Path.GetFileName(inputs[0]); }
+                catch { return inputs[0]; }
+            }
+            return $"{inputs.Count} dosya";
+        }
+
+        private static string BuildSourceFileForBatchFrom(IReadOnlyList<string> inputs)
+        {
+            if (inputs == null || inputs.Count == 0) return "_manual_import_";
+            if (inputs.Count == 1) return inputs[0];
+            return "_multi_select_";
+        }
+
+
+
+        private string BuildSelectedInputsSummaryLine()
+        {
+            if (_selectedInputs == null || _selectedInputs.Count == 0)
+                return "Seçim: 0 dosya";
+
+            int xml = 0, txt = 0, zip = 0, other = 0;
+
+            foreach (var p in _selectedInputs.Where(x => !string.IsNullOrWhiteSpace(x)))
+            {
+                var ext = "";
+                try { ext = Path.GetExtension(p).ToLowerInvariant(); } catch { }
+
+                if (ext == ".xml") xml++;
+                else if (ext == ".txt") txt++;
+                else if (ext == ".zip") zip++;
+                else other++;
+            }
+
+            var total = _selectedInputs.Count;
+            var parts = new List<string> { $"Toplam {total} dosya" };
+            if (xml > 0) parts.Add($"XML: {xml}");
+            if (txt > 0) parts.Add($"TXT: {txt}");
+            if (zip > 0) parts.Add($"ZIP: {zip}");
+            if (other > 0) parts.Add($"Diğer: {other}");
+
+            return "Seçim: " + string.Join(" | ", parts);
+        }
+
+        private static string NormalizeQuickFilterField(string field)
+        {
+            field = (field ?? "").Trim();
+            if (field.Length == 0) return field;
+
+            if (QuickFilterHeaderMap.TryGetValue(field, out var mapped))
+                return mapped;
+
+            return field;
+        }
+
+        private static string GetCellTextForQuickFilter(object row, string propertyPath)
+        {
+            if (row == null) return "";
+            propertyPath = (propertyPath ?? "").Trim();
+            if (propertyPath.Length == 0) return "";
+
+            object? current = row;
+
+            foreach (var part in propertyPath.Split('.'))
+            {
+                if (current == null) return "";
+
+                var t = current.GetType();
+                var p = t.GetProperty(part, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (p == null) return "";
+
+                current = p.GetValue(current);
+            }
+
+            if (current == null) return "";
+
+            var type = current.GetType();
+            var underlying = Nullable.GetUnderlyingType(type);
+
+            if (underlying == typeof(DateTime))
+                return current.ToString() ?? "";
+
+            return current switch
+            {
+                DateTime dt => dt.ToString("dd.MM.yyyy", TR),
+                DateTimeOffset dto => dto.ToString("dd.MM.yyyy", TR),
+
+                decimal dec => dec.ToString("N2", TR),
+                double dbl => dbl.ToString("N2", TR),
+                float flt => ((double)flt).ToString("N2", TR),
+
+                int i => i.ToString(TR),
+                long l => l.ToString(TR),
+                short s => s.ToString(TR),
+
+                bool b => b ? "Evet" : "Hayır",
+
+                _ => current.ToString() ?? ""
+            };
+        }
+
+        public IReadOnlyList<string> FisTuruOptions { get; } =
+            new[] { "Normal", "Açılış", "Kapanış", "Gelir Tablosu Kapanış", "Yansıtma Kapama" };
+
         public IReadOnlyList<string> AvailableFisTypes => FisTuruOptions;
 
-        // Kullanıcı tarafından manuel değiştirilen groupKey seti (Kaydet için)
         private readonly HashSet<string> _dirtyFisTypeGroupKeys = new(StringComparer.Ordinal);
 
         // ========= UNDO (tek adım) =========
@@ -65,7 +300,7 @@ namespace Muavin.Desktop.ViewModels
 
         private UndoFisTypeChange? _lastUndo;
 
-        // ===================== ✅ UNDO LAST IMPORT UX STATE (MANUAL - generator bağımsız) =====================
+        // ===================== ✅ UNDO LAST IMPORT UX STATE =====================
         private bool _hasUndoableImport;
         public bool HasUndoableImport
         {
@@ -107,7 +342,6 @@ namespace Muavin.Desktop.ViewModels
             Rows.CollectionChanged += Rows_CollectionChanged;
             Totals.PropertyChanged += (_, __) => UpdateTotalsText();
 
-            // Context değişince UI + komut aktifliği + tooltip güncellensin
             _context.PropertyChanged += async (_, __) =>
             {
                 OnPropertyChanged(nameof(ContextDisplay));
@@ -117,7 +351,6 @@ namespace Muavin.Desktop.ViewModels
                 UndoLastImportCommand.NotifyCanExecuteChanged();
             };
 
-            // başlangıçta state’i bir kere hesaplayalım
             _ = RefreshUndoLastImportStateAsync();
         }
 
@@ -125,8 +358,6 @@ namespace Muavin.Desktop.ViewModels
         {
             RecomputeTotals();
 
-            // ✅ Rows.Count değişince badge text otomatik güncellenmez.
-            // Focus açıkken UI göstergelerini zorla yenile.
             if (IsFisFocusActive)
             {
                 _focusedFisRowCount = Rows.Count;
@@ -134,7 +365,6 @@ namespace Muavin.Desktop.ViewModels
             }
         }
 
-        // IsBusy değişince Undo butonunun CanExecute'i + tooltip güncellensin
         partial void OnIsBusyChanged(bool value)
         {
             UndoLastImportCommand.NotifyCanExecuteChanged();
@@ -183,67 +413,308 @@ namespace Muavin.Desktop.ViewModels
             await LoadFromDatabaseAsync();
         }
 
-        // ================== ✅ IMPORT TO DB (XAML binding hatasını bitirir) =====================
-        // XAML'de Command="{Binding ImportToDatabaseCommand}" kullan.
+
+
+        // ================== ✅ IMPORT TO DB =====================
         [RelayCommand]
         private async Task ImportToDatabaseAsync()
         {
-            // 0) Context zorunlu
+            void LogState(string stage)
+            {
+                Logger.WriteLine($"[IMPORT][{stage}] vm_hash={this.GetHashCode()} thread={Environment.CurrentManagedThreadId}");
+                Logger.WriteLine($"[IMPORT][{stage}] context_has={_context.HasContext} context={_context.CompanyCode}/{_context.Year} companyName={_context.CompanyName}");
+                Logger.WriteLine($"[IMPORT][{stage}] selectedInputs.count={_selectedInputs?.Count ?? -1}");
+                Logger.WriteLine($"[IMPORT][{stage}] allRows.count={_allRows?.Count ?? -1}");
+                Logger.WriteLine($"[IMPORT][{stage}] rowsView.count={Rows?.Count ?? -1}");
+                Logger.WriteLine($"[IMPORT][{stage}] isBusy={IsBusy} dataOrigin={_dataOrigin}");
+                Logger.WriteLine($"[IMPORT][{stage}] hasPreviewCache={HasPreviewCache}");
+            }
+
             if (!_context.HasContext)
             {
                 StatusText = "Önce bağlam seçin (Şirket/Yıl).";
                 return;
             }
 
+            string? importLogPath = null;
+
             try
             {
                 IsBusy = true;
 
-                // 1) Eğer henüz preview yoksa → dosya seç + preview yükle
-                if (_allRows.Count == 0)
+                importLogPath = LogPaths.NewLogFilePath("debug_import");
+                Logger.Init(importLogPath, overwrite: true, forceReinit: true);
+
+                Logger.WriteLine("[IMPORT] LOG PATH=" + importLogPath);
+                Logger.WriteLine($"[IMPORT] Started. user={Environment.UserName}");
+                LogState("START");
+
+                // ============================================================
+                // ✅ IMPORT SOURCE SNAPSHOT (PREVIEW CACHE > LIVE PREVIEW > PICK)
+                // Amaç: Import sırasında _allRows/_selectedInputs değişse bile
+                // aynı snapshot ile importu tamamlamak.
+                // ============================================================
+                List<MuavinRow> rowsForImport;
+                IReadOnlyList<string> inputsForImport;
+
+                bool haveCachePreview = HasPreviewCache;
+
+                bool haveLivePreview =
+                    !haveCachePreview &&
+                    (_dataOrigin == DataOrigin.Preview) &&
+                    _allRows is { Count: > 0 };
+
+                if (haveCachePreview)
+                {
+                    rowsForImport = _previewRowsCache.ToList();     // snapshot of cache
+                    inputsForImport = _previewInputsCache.ToList();
+
+                    Logger.WriteLine($"[IMPORT] using PREVIEW CACHE rows={rowsForImport.Count:n0} inputs={inputsForImport.Count}");
+                    LogState("USING_PREVIEW_CACHE");
+                }
+                else if (haveLivePreview)
+                {
+                    rowsForImport = _allRows.ToList();              // snapshot
+                    inputsForImport = _selectedInputs?.ToList() ?? new List<string>();
+
+                    Logger.WriteLine($"[IMPORT] using LIVE preview snapshot rows={rowsForImport.Count:n0} inputs={inputsForImport.Count}");
+                    LogState("USING_LIVE_PREVIEW_SNAPSHOT");
+                }
+                else
                 {
                     StatusText = "Dosya seçiliyor…";
-                    var ok = await PickAndPreviewInternalAsync();
-                    if (!ok)
+                    Logger.WriteLine("[IMPORT] no preview -> PickAndPreviewInternalAsync()");
+                    var pickedOk = await PickAndPreviewInternalAsync();
+
+                    // ⚠️ Pick&Preview içinde Logger.Init(preview) yapılmış olabilir.
+                    // Import loguna geri dön.
+                    if (!string.IsNullOrWhiteSpace(importLogPath))
+                        Logger.Init(importLogPath, overwrite: false, forceReinit: true);
+
+                    Logger.WriteLine("[IMPORT] PickAndPreviewInternalAsync returned: " + pickedOk);
+                    LogState("AFTER_PICK_PREVIEW");
+
+                    if (!pickedOk)
                     {
                         StatusText = "İşlem iptal edildi.";
+                        Logger.WriteLine("[IMPORT] canceled at file picker");
                         return;
+                    }
+
+                    // Preview bittiğinde cache zaten alınmış olmalı; yine de garanti:
+                    if (!HasPreviewCache && _allRows.Count > 0)
+                        CacheCurrentPreviewSnapshot();
+
+                    if (_allRows.Count == 0 && !HasPreviewCache)
+                    {
+                        StatusText = "Aktarılacak veri yok (preview boş).";
+                        Logger.WriteLine("[IMPORT] abort: preview empty after pick");
+                        LogState("ABORT_EMPTY_AFTER_PICK");
+                        return;
+                    }
+
+                    // Cache varsa cache'i kullan
+                    if (HasPreviewCache)
+                    {
+                        rowsForImport = _previewRowsCache.ToList();
+                        inputsForImport = _previewInputsCache.ToList();
+                        Logger.WriteLine($"[IMPORT] using PICKED PREVIEW CACHE rows={rowsForImport.Count:n0} inputs={inputsForImport.Count}");
+                        LogState("USING_PICKED_PREVIEW_CACHE");
+                    }
+                    else
+                    {
+                        rowsForImport = _allRows.ToList();
+                        inputsForImport = _selectedInputs?.ToList() ?? new List<string>();
+                        Logger.WriteLine($"[IMPORT] using PICKED LIVE snapshot rows={rowsForImport.Count:n0} inputs={inputsForImport.Count}");
+                        LogState("USING_PICKED_PREVIEW_SNAPSHOT");
                     }
                 }
 
-                if (_allRows.Count == 0)
+                if (rowsForImport.Count == 0)
                 {
-                    StatusText = "Aktarılacak veri yok (preview boş).";
+                    StatusText = "Aktarılacak veri yok.";
+                    Logger.WriteLine("[IMPORT] abort: rowsForImport=0");
+                    LogState("ABORT_EMPTY_SNAPSHOT");
                     return;
                 }
 
-                // 2) Preview sonrası onay
-                var srcText = BuildSourceDisplayName();
+
+                // ============================================================
+                // ✅ CONTEXT YEAR FILTER (ONLY IMPORT SELECTED YEAR)
+                // Amaç: ContextWindow'da seçilen yıl dışındaki satırlar DB'ye yazılmasın.
+                // ============================================================
+                var targetYear = _context.Year;
+
+                // rowsForImport snapshot -> filtered snapshot
+                var beforeCount = rowsForImport.Count;
+                var filtered = rowsForImport
+                    .Where(r => r.PostingDate.HasValue && r.PostingDate.Value.Year == targetYear)
+                    .ToList();
+
+                var skipped = beforeCount - filtered.Count;
+
+                Logger.WriteLine($"[IMPORT] ContextYearFilter targetYear={targetYear} before={beforeCount:n0} after={filtered.Count:n0} skipped={skipped:n0}");
+
+                if (filtered.Count == 0)
+                {
+                    StatusText = $"Aktarılacak veri yok. (Bağlam yılı: {targetYear})";
+                    Logger.WriteLine("[IMPORT] abort: after ContextYearFilter = 0");
+                    LogState("ABORT_EMPTY_AFTER_CONTEXT_YEAR_FILTER");
+                    return;
+                }
+
+                // IReadOnlyList olduğu için referansı yeni listeye çeviriyoruz
+                rowsForImport = filtered;
+
+                // UI'ye uyarı (istersen kapatırız ama faydalı)
+                if (skipped > 0)
+                {
+                    StatusText = $"Uyarı: {skipped:n0} satır {targetYear} dışı olduğu için import edilmedi.";
+                }
+
+
+                // UI mesajı için kaynak adı/özet (snapshot üzerinden)
+                string srcText;
+                if (inputsForImport.Count == 0) srcText = "-";
+                else if (inputsForImport.Count == 1) srcText = Path.GetFileName(inputsForImport[0]);
+                else srcText = $"{inputsForImport.Count} dosya";
+
+                int xml = 0, txt = 0, zip = 0, other = 0;
+                foreach (var p in inputsForImport.Where(x => !string.IsNullOrWhiteSpace(x)))
+                {
+                    string ext;
+                    try { ext = Path.GetExtension(p).ToLowerInvariant(); }
+                    catch { ext = ""; }
+
+                    if (ext == ".xml") xml++;
+                    else if (ext == ".txt") txt++;
+                    else if (ext == ".zip") zip++;
+                    else other++;
+                }
+
+                var parts = new List<string> { $"Toplam {inputsForImport.Count} dosya" };
+                if (xml > 0) parts.Add($"XML: {xml}");
+                if (txt > 0) parts.Add($"TXT: {txt}");
+                if (zip > 0) parts.Add($"ZIP: {zip}");
+                if (other > 0) parts.Add($"Diğer: {other}");
+                var filesSummary = "Seçim: " + string.Join(" | ", parts);
+
+                string filesList;
+                {
+                    var names = inputsForImport
+                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Select(p =>
+                        {
+                            try { return Path.GetFileName(p); }
+                            catch { return p; }
+                        })
+                        .Where(n => !string.IsNullOrWhiteSpace(n))
+                        .ToList();
+
+                    if (names.Count == 0) filesList = "• (dosya seçilmedi)";
+                    else if (names.Count <= 25) filesList = "• " + string.Join("\n• ", names);
+                    else
+                    {
+                        var head = names.Take(25).ToList();
+                        var rest = names.Count - 25;
+                        filesList = "• " + string.Join("\n• ", head) + $"\n• … (+{rest} dosya daha)";
+                    }
+                }
+
                 var msg =
                     $"Seçilen kaynak: {srcText}\n" +
-                    $"Önizleme satır sayısı: {_allRows.Count:N0}\n\n" +
+                    $"{filesSummary}\n\n" +
+                    $"Seçilen dosyalar:\n{filesList}\n\n" +
+                    $"Önizleme satır sayısı: {rowsForImport.Count:N0}\n\n" +
                     "Bu veriler veritabanına eklensin mi?";
 
                 var confirm = MessageBox.Show(msg, "Veritabanına Veri Ekle", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                Logger.WriteLine("[IMPORT] confirmation result: " + confirm);
+
                 if (confirm != MessageBoxResult.Yes)
                 {
                     StatusText = "DB ekleme iptal edildi (preview kaldı).";
+                    Logger.WriteLine("[IMPORT] user canceled at confirmation");
+                    LogState("CANCEL_CONFIRM");
                     return;
                 }
 
-                // 3) DB import
                 StatusText = "DB’ye import ediliyor…";
+                Logger.WriteLine("[IMPORT] confirmed by user");
+                LogState("BEFORE_VALIDATION");
 
-                var sourceFileForBatch = BuildSourceFileForBatch(); // batch için tek string
+                WriteQuickValidationLog(
+                    rows: rowsForImport,
+                    selectedInputs: inputsForImport,
+                    contextCompany: _context.CompanyCode,
+                    contextYear: _context.Year
+                );
+
+                // ✅ Context year dışına taşan satırları yakala (kafa karışmasın)
+                var yearsInPayload = rowsForImport
+                    .Where(r => r.PostingDate.HasValue)
+                    .Select(r => r.PostingDate!.Value.Year)
+                    .Distinct()
+                    .OrderBy(y => y)
+                    .ToList();
+
+                if (yearsInPayload.Count > 0 && yearsInPayload.Any(y => y != _context.Year))
+                {
+                    var msgYear =
+                        $"Seçili bağlam yılı: {_context.Year}\n" +
+                        $"Dosyadaki yıl(lar): {string.Join(", ", yearsInPayload)}\n\n" +
+                        "Bu dosyada bağlam yılı dışındaki satırlar var.\n\n" +
+                        "Evet = Sadece bağlam yılı satırlarını import et\n" +
+                        "Hayır = Tüm yılları olduğu gibi import et\n" +
+                        "İptal = Import’u durdur";
+
+                    var ans = MessageBox.Show(msgYear, "Yıl Uyuşmazlığı", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+
+                    if (ans == MessageBoxResult.Cancel)
+                    {
+                        StatusText = "Import iptal edildi (yıl uyuşmazlığı).";
+                        return;
+                    }
+
+                    if (ans == MessageBoxResult.Yes)
+                    {
+                        var filteredRows = rowsForImport
+                            .Where(r => r.PostingDate?.Year == _context.Year)
+                            .ToList();
+
+                        Logger.WriteLine($"[IMPORT] year-mismatch -> FILTERED to contextYear={_context.Year} rows={filteredRows.Count:n0} (was {rowsForImport.Count:n0})");
+                        rowsForImport = filteredRows;
+                    }
+                    else
+                    {
+                        Logger.WriteLine("[IMPORT] year-mismatch -> user chose to import ALL years in payload");
+                    }
+                }
+
+
+                string sourceFileForBatch;
+                if (inputsForImport.Count == 0) sourceFileForBatch = "_manual_import_";
+                else if (inputsForImport.Count == 1) sourceFileForBatch = inputsForImport[0];
+                else sourceFileForBatch = "_multi_select_";
+
+                Logger.WriteLine("[IMPORT] sourceFileForBatch=" + sourceFileForBatch);
+                Logger.WriteLine("[IMPORT] BulkInsertRowsAsync begin...");
+                Logger.WriteLine($"[IMPORT] snapshot rows={rowsForImport.Count:n0} inputs={inputsForImport.Count}");
+                LogState("BEFORE_BULK");
+
                 await _dbRepo.BulkInsertRowsAsync(
                     companyCode: _context.CompanyCode!,
-                    rows: _allRows,
+                    rows: rowsForImport,
                     sourceFile: sourceFileForBatch,
                     replaceExistingForSameSource: true,
                     companyName: _context.CompanyName,
                     ct: default,
                     replaceMode: DbMuavinRepository.ImportReplaceMode.MonthsInPayload
                 );
+
+                Logger.WriteLine("[IMPORT] BulkInsertRowsAsync ok");
+                LogState("AFTER_BULK");
 
                 StatusText = "Import tamamlandı. DB’den yeniden yükleniyor…";
                 await LoadFromDatabaseAsync();
@@ -252,29 +723,99 @@ namespace Muavin.Desktop.ViewModels
                 UndoLastImportCommand.NotifyCanExecuteChanged();
 
                 StatusText = "DB import tamamlandı.";
+                Logger.WriteLine("[IMPORT] done ok");
+                LogState("DONE");
             }
             catch (Exception ex)
             {
                 StatusText = "Import hatası: " + ex.Message;
                 Logger.WriteLine("[IMPORT ERROR] " + ex);
+                try { LogState("ERROR"); } catch { }
             }
             finally
             {
+                try { Logger.Close(); } catch { }
                 IsBusy = false;
+
+                if (!string.IsNullOrWhiteSpace(importLogPath))
+                    StatusText = (StatusText ?? "") + $" (Log: {importLogPath})";
             }
         }
 
-        // ✅ Import butonunun içinde kullandığımız: Dosya seç + Preview yükle
+        private void WriteQuickValidationLog(
+             IReadOnlyList<MuavinRow> rows,
+             IEnumerable<string>? selectedInputs,
+             string? contextCompany,
+             int contextYear)
+        {
+            try
+            {
+                if (rows == null || rows.Count == 0)
+                {
+                    Logger.WriteLine("[QV] rows=0");
+                    return;
+                }
+
+                var safeInputs = (selectedInputs ?? Array.Empty<string>())
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .ToArray();
+
+                var total = rows.Count;
+                var postingNull = rows.Count(r => !r.PostingDate.HasValue);
+                var entryNull = rows.Count(r => string.IsNullOrWhiteSpace(r.EntryNumber));
+                var gkNull = rows.Count(r => string.IsNullOrWhiteSpace(r.GroupKey));
+                var docNull = rows.Count(r => string.IsNullOrWhiteSpace(r.DocumentNumber));
+
+                DateTime? minDate = rows.Where(r => r.PostingDate.HasValue).Min(r => r.PostingDate) ?? null;
+                DateTime? maxDate = rows.Where(r => r.PostingDate.HasValue).Max(r => r.PostingDate) ?? null;
+
+                var ym = rows.Where(r => r.PostingDate.HasValue)
+                             .Select(r => r.PostingDate!.Value.Year * 100 + r.PostingDate!.Value.Month)
+                             .Distinct()
+                             .OrderBy(x => x)
+                             .ToList();
+
+                Logger.WriteLine("====================================================");
+                Logger.WriteLine("[QV] QUICK VALIDATION (BEFORE DB IMPORT)");
+                Logger.WriteLine($"[QV] Context   : company={contextCompany ?? "-"} year={contextYear}");
+                Logger.WriteLine($"[QV] Inputs    : {safeInputs.Length} file(s) => {string.Join(" | ", safeInputs.Select(Path.GetFileName))}");
+                Logger.WriteLine($"[QV] Rows      : total={total:n0}");
+                Logger.WriteLine($"[QV] Nulls     : posting_date_null={postingNull:n0} entry_number_null={entryNull:n0} group_key_null={gkNull:n0} doc_no_null={docNull:n0}");
+                Logger.WriteLine($"[QV] DateRange : {minDate:yyyy-MM-dd} .. {maxDate:yyyy-MM-dd}");
+                Logger.WriteLine($"[QV] YM        : count={ym.Count} => {string.Join(", ", ym.Select(x => (x % 100).ToString("00") + "/" + (x / 100)))}");
+
+                // Kaynağa göre kabaca dağılım (XML/TXT/ZIP)
+                int xml = safeInputs.Count(p => Path.GetExtension(p).Equals(".xml", StringComparison.OrdinalIgnoreCase));
+                int txt = safeInputs.Count(p => Path.GetExtension(p).Equals(".txt", StringComparison.OrdinalIgnoreCase));
+                int zip = safeInputs.Count(p => Path.GetExtension(p).Equals(".zip", StringComparison.OrdinalIgnoreCase));
+                Logger.WriteLine($"[QV] FileTypes : xml={xml} txt={txt} zip={zip}");
+
+                // Fiş türü dağılımı (ilk 10)
+                var ftMap = rows.GroupBy(r => (r.FisTuru ?? "Normal").Trim(), StringComparer.OrdinalIgnoreCase)
+                                .OrderByDescending(g => g.Count())
+                                .Take(10)
+                                .Select(g => $"{g.Key}:{g.Count():n0}");
+                Logger.WriteLine($"[QV] FisTuru   : {string.Join(", ", ftMap)}");
+
+                Logger.WriteLine("====================================================");
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("[QV ERROR] " + ex);
+            }
+        }
+
         private async Task<bool> PickAndPreviewInternalAsync()
         {
             var dlg = new CommonOpenFileDialog
             {
-                Title = "XML/TXT dosyası veya ZIP seç",
+                Title = "XML/TXT dosyası veya ZIP seç (tek/çoklu)",
                 EnsurePathExists = true,
                 Multiselect = true,
                 IsFolderPicker = false
             };
 
+            dlg.Filters.Add(new CommonFileDialogFilter("e-Defter / Muavin (XML, TXT, ZIP)", "*.xml;*.txt;*.zip"));
             dlg.Filters.Add(new CommonFileDialogFilter("XML", "*.xml"));
             dlg.Filters.Add(new CommonFileDialogFilter("TXT", "*.txt"));
             dlg.Filters.Add(new CommonFileDialogFilter("ZIP", "*.zip"));
@@ -288,12 +829,10 @@ namespace Muavin.Desktop.ViewModels
 
             StatusText = $"{_selectedInputs.Count} seçim yapıldı. Önizleme yükleniyor…";
 
-            // Preview
             await ParsePreviewAsync();
             return true;
         }
 
-        // UI’da güzel gözüksün diye
         private string BuildSourceDisplayName()
         {
             if (_selectedInputs.Count == 0) return "-";
@@ -301,11 +840,10 @@ namespace Muavin.Desktop.ViewModels
             return $"{_selectedInputs.Count} dosya";
         }
 
-        // DB batch.source_file alanına tek değer veriyoruz
         private string BuildSourceFileForBatch()
         {
             if (_selectedInputs.Count == 0) return "_manual_import_";
-            if (_selectedInputs.Count == 1) return _selectedInputs[0]; // repo zaten GetFileName’e çeviriyor
+            if (_selectedInputs.Count == 1) return _selectedInputs[0];
             return "_multi_select_";
         }
 
@@ -317,6 +855,7 @@ namespace Muavin.Desktop.ViewModels
             {
                 StatusText = "Bağlam seçilmedi.";
                 HasUndoableImport = false;
+                _dataOrigin = DataOrigin.None;
                 return;
             }
 
@@ -325,10 +864,12 @@ namespace Muavin.Desktop.ViewModels
                 IsBusy = true;
                 StatusText = $"{_context.Display} verileri yükleniyor…";
 
-                // 1) satırları çek
+                _dataOrigin = DataOrigin.Database;
+
+                // 1) çek
                 var rows = await _dbRepo.GetRowsAsync(_context.CompanyCode!, _context.Year);
 
-                // 2) override'ları çek ve uygula (fis türü)
+                // 2) override'ları uygula (fis türü)
                 var overrides = await _dbRepo.GetFisTypeOverridesAsync(_context.CompanyCode!, _context.Year);
                 if (overrides.Count > 0)
                 {
@@ -337,6 +878,29 @@ namespace Muavin.Desktop.ViewModels
                         if (!string.IsNullOrWhiteSpace(r.GroupKey) &&
                             overrides.TryGetValue(r.GroupKey!, out var ft))
                             r.FisTuru = ft;
+                    }
+                }
+
+                // 3) DB-side karsi_hesap eksikse: UI-side hesaplama YOK.
+                //    Onun yerine DB'ye backfill + tekrar çek.
+                if (rows.Any(r => string.IsNullOrWhiteSpace(r.KarsiHesap)))
+                {
+                    StatusText = "DB'de eksik Karşı Hesap var — düzeltiliyor…";
+
+                    await _dbRepo.RecomputeKarsiHesapForCompanyYearAsync(_context.CompanyCode!, _context.Year);
+
+                    // tekrar çek
+                    rows = await _dbRepo.GetRowsAsync(_context.CompanyCode!, _context.Year);
+
+                    // override tekrar (çünkü rows yenilendi)
+                    if (overrides.Count > 0)
+                    {
+                        foreach (var r in rows)
+                        {
+                            if (!string.IsNullOrWhiteSpace(r.GroupKey) &&
+                                overrides.TryGetValue(r.GroupKey!, out var ft))
+                                r.FisTuru = ft;
+                        }
                     }
                 }
 
@@ -352,19 +916,17 @@ namespace Muavin.Desktop.ViewModels
                 _allRows.AddRange(ordered);
 
                 ComputeRunningBalances(_allRows);
+                ComputeFisBalanceFlags(_allRows);
 
                 _dirtyFisTypeGroupKeys.Clear();
                 _userChangedSort = false;
 
-                // Undo reset
                 _lastUndo = null;
                 RaiseUndoStateChanged();
 
-                // Fiş odağı reset (DB load "fresh state")
                 ClearFisFocusCore(resetStatus: false);
 
                 ApplyCurrentFilterToView(_allRows);
-                await ComputeContraForVisibleAsync();
 
                 await RefreshUndoLastImportStateAsync();
 
@@ -417,7 +979,7 @@ namespace Muavin.Desktop.ViewModels
         }
 
         // =====================================================================
-        //  ✅ MANUEL FİŞ TÜRÜ OVERRIDE — "Grid/ComboBox" tarzı çağrılar için de destek
+        //  ✅ MANUEL FİŞ TÜRÜ OVERRIDE
         // =====================================================================
         public async Task ApplyFisTypeOverrideAsync(string? groupKey, string? newFisType)
         {
@@ -482,7 +1044,6 @@ namespace Muavin.Desktop.ViewModels
             var applied = ApplyFisTuruToTargetsCore(entryNo, targets, ft);
             if (!applied) return;
 
-
             var impact = BuildFisTypeImpact(entryNo, targets, ft);
             var msg = BuildFisTypeConfirmationMessage(impact);
 
@@ -508,7 +1069,7 @@ namespace Muavin.Desktop.ViewModels
         }
 
         // =====================================================================
-        //  CONTEXT MENU: Fiş Türü — Komutlar (eski davranış)
+        //  CONTEXT MENU: Fiş Türü — Komutlar
         // =====================================================================
 
         [RelayCommand]
@@ -539,8 +1100,10 @@ namespace Muavin.Desktop.ViewModels
                 return;
             }
 
+            var key = KeyFor(SelectedRow);
+
             var targets = _allRows
-                .Where(r => string.Equals((r.EntryNumber ?? "").Trim(), entryNo, StringComparison.Ordinal))
+                .Where(r => string.Equals(KeyFor(r), key, StringComparison.Ordinal))
                 .ToList();
 
             if (targets.Count == 0)
@@ -549,9 +1112,10 @@ namespace Muavin.Desktop.ViewModels
                 return;
             }
 
+            // ✅ DB load’da group_key zaten var; preview’da yoksa üret.
             foreach (var r in targets)
                 if (string.IsNullOrWhiteSpace(r.GroupKey))
-                    r.GroupKey = BuildGroupKey(r);
+                    r.GroupKey = BuildGroupKeyFallback(r);
 
             var alreadySame = targets.All(r => string.Equals((r.FisTuru ?? "").Trim(), ft, StringComparison.OrdinalIgnoreCase));
             if (alreadySame)
@@ -604,10 +1168,8 @@ namespace Muavin.Desktop.ViewModels
             StatusText = $"Değişiklik uygulandı; şimdilik kaydedilmedi. (Kaydedilmemiş fiş/grup: {_dirtyFisTypeGroupKeys.Count})";
         }
 
-        // ✅ Code-behind / grid gibi yerlerden çağırmak için public köprü
         public Task SetFisTuruForSelectedFisWithPromptFromUiAsync(string? fisTuru)
             => SetFisTuruForSelectedFisWithPromptAsync(fisTuru);
-
 
         [RelayCommand]
         private void UndoLastFisTuruChange() => UndoLastFisTuruChangeCore();
@@ -648,10 +1210,14 @@ namespace Muavin.Desktop.ViewModels
         {
             if (targets == null || targets.Count == 0) return false;
 
+            entryNo = (entryNo ?? "").Trim();
+            newFisTuru = (newFisTuru ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(newFisTuru)) return false;
+
             var undo = new UndoFisTypeChange
             {
                 EntryNo = entryNo,
-                GroupKey = targets.FirstOrDefault()?.GroupKey ?? "",
+                GroupKey = (targets.FirstOrDefault()?.GroupKey ?? "").Trim(),
                 NewFisTuru = newFisTuru,
                 DirtyBefore = new HashSet<string>(_dirtyFisTypeGroupKeys, StringComparer.Ordinal)
             };
@@ -664,13 +1230,15 @@ namespace Muavin.Desktop.ViewModels
                 r.FisTuru = newFisTuru;
 
                 if (string.IsNullOrWhiteSpace(r.GroupKey))
-                    r.GroupKey = BuildGroupKey(r);
+                    r.GroupKey = BuildGroupKeyFallback(r);
 
-                _dirtyFisTypeGroupKeys.Add(r.GroupKey!);
+                _dirtyFisTypeGroupKeys.Add(r.GroupKey);
             }
 
             _lastUndo = undo;
             RaiseUndoStateChanged();
+
+            ComputeFisBalanceFlags(_allRows);
 
             var filtered = ApplyFilterLogic(_allRows);
             ApplyCurrentFilterToView(filtered);
@@ -686,7 +1254,7 @@ namespace Muavin.Desktop.ViewModels
             if (!_context.HasContext)
             {
                 StatusText = "Önce bağlam seçin.";
-                return; 
+                return;
             }
 
             if (_dirtyFisTypeGroupKeys.Count == 0)
@@ -711,7 +1279,6 @@ namespace Muavin.Desktop.ViewModels
                 IsBusy = true;
                 StatusText = "Manuel fiş türü değişiklikleri DB’ye kaydediliyor…";
 
-                // 1) upsert listesi + delete listesi hazırlansın
                 var upserts = new List<(string groupKey, string fisTuru)>();
                 var deletes = new List<string>();
 
@@ -729,7 +1296,6 @@ namespace Muavin.Desktop.ViewModels
                         upserts.Add((gk, ft));
                 }
 
-                // 2) Önce upsert (tek transaction içinde senin repo zaten tx açıyor)
                 if (upserts.Count > 0)
                 {
                     await _dbRepo.UpsertFisTypeOverridesAsync(
@@ -739,7 +1305,6 @@ namespace Muavin.Desktop.ViewModels
                         updatedBy: Environment.UserName);
                 }
 
-                // 3) Delete’ler (istersen repo’ya batch delete ekleriz; şimdilik loop ok)
                 foreach (var gk in deletes)
                 {
                     await _dbRepo.DeleteFisTypeOverrideAsync(_context.CompanyCode!, _context.Year, gk);
@@ -783,7 +1348,6 @@ namespace Muavin.Desktop.ViewModels
         private static string FormatTypeCounts(Dictionary<string, int> map)
         {
             if (map.Count == 0) return "-";
-            // örn: Normal: 12, Açılış: 3
             return string.Join(", ",
                 map.OrderByDescending(kv => kv.Value)
                    .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
@@ -794,7 +1358,6 @@ namespace Muavin.Desktop.ViewModels
         {
             var gk = (targets.FirstOrDefault()?.GroupKey ?? "").Trim();
 
-            // distinct fis = entry no sayısı (data kirliliğine karşı)
             var fisCount = targets
                 .Select(r => (r.EntryNumber ?? "").Trim())
                 .Where(x => x.Length > 0)
@@ -831,18 +1394,15 @@ namespace Muavin.Desktop.ViewModels
         {
             var oldDist = FormatTypeCounts(impact.OldTypeCounts);
 
-            // "Normal" özel davranış
             var normalNote =
                 string.Equals(impact.NewType, "Normal", StringComparison.OrdinalIgnoreCase)
                 ? "• Bu seçim 'override' kaydını DB'den SİLER (yani varsayılana döner).\n"
                 : "• Bu seçim DB'de bir 'override' olarak saklanır.\n";
 
-            // Kaydet derse kaç kayıt yazılacak? = distinct groupKey
-            // (senin SaveFisTuruOverridesToDbAsync zaten groupKey bazlı dönüyor)
             var dbWriteCountLine = $"• Kaydet dersen DB'ye yazılacak kayıt: {impact.DistinctGroupKeyCount} (groupKey)\n";
 
             return
-        $@"Fiş Türü Değişikliği Ön İzleme
+$@"Fiş Türü Değişikliği Ön İzleme
 
 Fiş No: {impact.EntryNo}
 Yeni Tür: {impact.NewType}
@@ -863,7 +1423,6 @@ Ne yapmak istiyorsunuz?
 Notlar:
 {normalNote}• Kaydetmezseniz bu değişiklik uygulama kapanınca kaybolur.";
         }
-
 
         // ================== Dosya/Klasör Seç (PREVIEW) =====================
         [RelayCommand]
@@ -891,6 +1450,7 @@ Notlar:
             await ParsePreviewAsync();
         }
 
+
         private async Task ParsePreviewAsync()
         {
             if (_selectedInputs.Count == 0)
@@ -900,6 +1460,7 @@ Notlar:
             }
 
             List<string>? tempDirs = null;
+            string? previewLogPath = null;
 
             try
             {
@@ -907,17 +1468,29 @@ Notlar:
                 ProgressValue = 0;
                 StatusText = "Hazırlanıyor…";
 
-                var logPath = Path.Combine(AppContext.BaseDirectory, "debug.txt");
-                Logger.Init(logPath, overwrite: true);
+                _dataOrigin = DataOrigin.Preview;
+
+                previewLogPath = LogPaths.NewLogFilePath("debug_preview");
+                Logger.Init(previewLogPath, overwrite: true, forceReinit: true);
+
+                Logger.WriteLine("[PREVIEW] LOG PATH=" + previewLogPath);
+                Logger.WriteLine($"[PREVIEW] Started. context={_context.CompanyCode}/{_context.Year} user={Environment.UserName}");
+                Logger.WriteLine($"[PREVIEW] selectedInputs={_selectedInputs.Count}");
+                Logger.WriteLine($"[PREVIEW] vm_hash={this.GetHashCode()} thread={Environment.CurrentManagedThreadId}");
+
+                StatusText = $"Hazırlanıyor… (Log: {previewLogPath})";
 
                 FieldMap.Load();
 
                 var (files, temps) = ExpandToDataFilesWithTemps(_selectedInputs);
                 tempDirs = temps;
 
+                Logger.WriteLine($"[PREVIEW] files.count={files.Count}");
+
                 if (files.Count == 0)
                 {
                     StatusText = "Seçimlerde XML/TXT bulunamadı.";
+                    Logger.WriteLine("[PREVIEW] abort: no xml/txt found in selection");
                     return;
                 }
 
@@ -925,7 +1498,6 @@ Notlar:
                 Rows.Clear();
                 Totals.Reset();
 
-                // Focus reset
                 ClearFisFocusCore(resetStatus: false);
 
                 ProgressMax = files.Count;
@@ -936,12 +1508,16 @@ Notlar:
                     var ext = Path.GetExtension(file).ToLowerInvariant();
                     List<MuavinRow> list;
 
+                    Logger.WriteLine("[PREVIEW] parsing: " + file);
+
                     if (ext == ".txt")
                     {
                         int py, pm;
                         list = _txtParser.Parse(file, _context.CompanyCode ?? "", out py, out pm);
 
                         var meta = _txtParser.LastMeta;
+                        Logger.WriteLine($"[PREVIEW][TXT] delimiter={meta.Delimiter} parsed={meta.ParsedRowCount} skipped={meta.SkippedRowCount} ymCount={meta.DistinctYearMonthCount} min={meta.MinDate:yyyy-MM-dd} max={meta.MaxDate:yyyy-MM-dd}");
+
                         if (meta.DistinctYearMonthCount > 1)
                             Logger.WriteLine($"[TXT META] {Path.GetFileName(file)} => {meta.DistinctYearMonthCount} ay (min={meta.MinDate:yyyy-MM-dd}, max={meta.MaxDate:yyyy-MM-dd})");
                     }
@@ -949,11 +1525,15 @@ Notlar:
                     {
                         var parsed = _parser.Parse(file);
                         list = parsed?.ToList() ?? new List<MuavinRow>();
+                        Logger.WriteLine($"[PREVIEW][XML] rows={list.Count}");
                     }
+
+                    // ✅ Preview’da group_key üretimi DB ile uyumlu olsun:
+                    var normalizedSource = NormalizeSourceFileForUi(file);
 
                     foreach (var r in list)
                         if (string.IsNullOrWhiteSpace(r.GroupKey))
-                            r.GroupKey = BuildGroupKey(r);
+                            r.GroupKey = BuildGroupKeyForUi(r, normalizedSource);
 
                     _allRows.AddRange(list);
                     parsedCount += list.Count;
@@ -962,6 +1542,8 @@ Notlar:
                     StatusText = $"Önizleme yükleniyor… ({ProgressValue}/{ProgressMax})";
                     await Task.Yield();
                 }
+
+                Logger.WriteLine($"[PREVIEW] totalRows(parsed)={parsedCount}");
 
                 var ordered = _allRows
                     .OrderBy(r => r.PostingDate ?? DateTime.MinValue)
@@ -975,6 +1557,7 @@ Notlar:
                 _allRows.AddRange(ordered);
 
                 ComputeRunningBalances(_allRows);
+                ComputeFisBalanceFlags(_allRows);
 
                 _dirtyFisTypeGroupKeys.Clear();
                 _userChangedSort = false;
@@ -982,9 +1565,17 @@ Notlar:
                 RaiseUndoStateChanged();
 
                 ApplyCurrentFilterToView(_allRows);
-                await ComputeContraForVisibleAsync();
+
+                // ✅ Preview’da DB yok → UI-side karşı hesap hesaplanır.
+                await EnsureKarsiHesapForVisibleIfMissingAsync(forceComputeEvenIfSomePresent: false);
+                // ✅ PREVIEW SNAPSHOT CACHE (IMPORT GARANTİ)
+                CacheCurrentPreviewSnapshot();
 
                 StatusText = $"Önizleme tamam — {parsedCount} satır. Görünen {Rows.Count} satır.";
+
+                // ✅ kritik: Preview sonunda VM/state snapshot
+                Logger.WriteLine($"[PREVIEW] vm_hash={this.GetHashCode()} allRows.count={_allRows.Count} selectedInputs.count={_selectedInputs.Count} visibleRows.count={Rows.Count}");
+                Logger.WriteLine($"[PREVIEW] done. visibleRows={Rows.Count}");
             }
             catch (Exception ex)
             {
@@ -993,9 +1584,12 @@ Notlar:
             }
             finally
             {
-                Logger.Close();
+                try { Logger.Close(); } catch { }
                 IsBusy = false;
                 CleanupTempDirs(tempDirs);
+
+                if (!string.IsNullOrWhiteSpace(previewLogPath))
+                    StatusText = (StatusText ?? "") + $" (Log: {previewLogPath})";
             }
         }
 
@@ -1100,23 +1694,30 @@ Notlar:
         [RelayCommand]
         private async Task ApplyFilters()
         {
-            if (IsFisFocusActive) ClearFisFocusCore(resetStatus: false);
+            await RefreshViewAsync(
+                baseSource: _allRows,
+                keepFisFocus: true,
+                recomputeContra: (_dataOrigin == DataOrigin.Preview));
 
-            var filtered = ApplyFilterLogic(_allRows);
-            ApplyCurrentFilterToView(filtered);
-            await ComputeContraForVisibleAsync();
-            StatusText = $"Filtre uygulandı. Görünen {Rows.Count} satır.";
+            StatusText = IsFisFocusActive
+                ? $"Fiş odağı açık ({_focusedFisNo}) — filtre uygulandı. Görünen {Rows.Count} satır."
+                : $"Filtre uygulandı. Görünen {Rows.Count} satır.";
         }
 
         [RelayCommand]
         private async Task ResetFilters()
         {
-            if (IsFisFocusActive) ClearFisFocusCore(resetStatus: false);
-
             Filters.Reset();
-            ApplyCurrentFilterToView(_allRows);
-            await ComputeContraForVisibleAsync();
-            StatusText = "Filtreler sıfırlandı.";
+            Filters.Aciklama = null;
+
+            await RefreshViewAsync(
+                baseSource: _allRows,
+                keepFisFocus: true,
+                recomputeContra: (_dataOrigin == DataOrigin.Preview));
+
+            StatusText = IsFisFocusActive
+                ? $"Fiş odağı açık ({_focusedFisNo}) — filtreler sıfırlandı. Görünen {Rows.Count} satır."
+                : "Filtreler sıfırlandı.";
         }
 
         [RelayCommand]
@@ -1132,7 +1733,6 @@ Notlar:
                 return;
             }
 
-            // Sayı bilgisi (null-safe)
             var visibleCount = Rows?.Count ?? 0;
             var allCount = _allRows?.Count ?? 0;
 
@@ -1152,13 +1752,14 @@ Notlar:
             if (res != MessageBoxResult.Yes)
                 return;
 
-            // ---- Asıl temizleme ----
             ClearFisFocusCore(resetStatus: false);
 
             _selectedInputs?.Clear();
 
             _allRows?.Clear();
             Rows?.Clear();
+            ClearPreviewCache();
+
 
             Filters?.Reset();
             Totals?.Reset();
@@ -1169,6 +1770,7 @@ Notlar:
             RaiseUndoStateChanged();
 
             HasUndoableImport = false;
+            _dataOrigin = DataOrigin.None;
 
             StatusText = "Ekrandaki veri boşaltıldı. Geri yüklemek için 'Veriyi Yeniden Yükle' kullanın.";
         }
@@ -1238,17 +1840,29 @@ Notlar:
             cvs.Refresh();
         }
 
-        // ================ Karşı Hesap ==========================
-        private async Task ComputeContraForVisibleAsync()
+        // ================ ✅ Karşı Hesap (PREVIEW ONLY) ==========================
+        // DB'de KarsiHesap, repo tarafında hesaplanır. UI-side hesaplama SADECE Preview'da kullanılır.
+        private async Task EnsureKarsiHesapForVisibleIfMissingAsync(bool forceComputeEvenIfSomePresent = false)
         {
+            if (_dataOrigin != DataOrigin.Preview)
+                return;
+
             if (Rows.Count == 0) return;
 
-            var snapshot = Rows.ToList();
+            var visible = Rows.ToList();
+            bool anyMissing = visible.Any(r => string.IsNullOrWhiteSpace(r.KarsiHesap));
+
+            if (!anyMissing && !forceComputeEvenIfSomePresent)
+                return;
+
+            var all = _allRows.Count > 0 ? _allRows : visible;
+
             var result = await Task.Run(() =>
             {
+                // 1) group_key bazında deb/crd setleri (TÜM satırlar üzerinden)
                 var map = new Dictionary<string, (HashSet<string> deb, HashSet<string> crd)>(StringComparer.Ordinal);
 
-                foreach (var g in snapshot.GroupBy(r => KeyFor(r)))
+                foreach (var g in all.GroupBy(r => KeyFor(r)))
                 {
                     var deb = new HashSet<string>(StringComparer.Ordinal);
                     var crd = new HashSet<string>(StringComparer.Ordinal);
@@ -1265,9 +1879,10 @@ Notlar:
                     map[g.Key] = (deb, crd);
                 }
 
+                // 2) sadece visible için string üret
                 var karsiByRow = new Dictionary<MuavinRow, string>(ReferenceEqualityComparer<MuavinRow>.Instance);
 
-                foreach (var r in snapshot)
+                foreach (var r in visible)
                 {
                     var key = KeyFor(r);
                     if (!map.TryGetValue(key, out var sets))
@@ -1294,18 +1909,25 @@ Notlar:
                 return karsiByRow;
             });
 
-            foreach (var r in snapshot)
+            // 3) UI satırlarına bas (SADECE boş olanlara)
+            foreach (var r in visible)
+            {
+                if (!string.IsNullOrWhiteSpace(r.KarsiHesap) && !forceComputeEvenIfSomePresent)
+                    continue;
+
                 if (result.TryGetValue(r, out var val))
                     r.KarsiHesap = val;
+            }
         }
 
+        // ✅ Tek doğru anahtar: GroupKey varsa onu kullan.
         private static string KeyFor(MuavinRow r)
         {
-            var d = r.PostingDate?.ToString("yyyy-MM-dd") ?? "";
-            var no = r.EntryNumber ?? "";
-            if (r.FisTuru is "Açılış" or "Kapanış") return $"{no}|{d}";
-            var doc = r.DocumentNumber ?? "";
-            return string.IsNullOrWhiteSpace(doc) ? $"{no}|{d}" : $"{no}|{d}|DOC:{doc}";
+            var gk = (r.GroupKey ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(gk))
+                return gk;
+
+            return BuildGroupKeyFallback(r);
         }
 
         private void ApplyDefaultSort()
@@ -1398,18 +2020,24 @@ Notlar:
 
             if (Filters.TarihBas.HasValue)
                 q = q.Where(r => r.PostingDate.HasValue && r.PostingDate.Value.Date >= Filters.TarihBas.Value.Date);
+
             if (Filters.TarihBit.HasValue)
                 q = q.Where(r => r.PostingDate.HasValue && r.PostingDate.Value.Date <= Filters.TarihBit.Value.Date);
 
             if (!string.IsNullOrWhiteSpace(Filters.HesapKodu))
             {
-                var wanted = Filters.HesapKodu.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                              .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var wanted = Filters.HesapKodu
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
                 q = q.Where(r => r.HesapKodu != null && wanted.Contains(r.HesapKodu));
             }
 
             if (!string.IsNullOrWhiteSpace(Filters.Aciklama))
-                q = q.Where(r => (r.Aciklama ?? "").Contains(Filters.Aciklama!, StringComparison.OrdinalIgnoreCase));
+            {
+                var term = Filters.Aciklama.Trim();
+                q = q.Where(r => (r.Aciklama ?? "").Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (Filters.ExcludeAcilis)
                 q = q.Where(r => !string.Equals((r.FisTuru ?? "").Trim(), "Açılış", StringComparison.OrdinalIgnoreCase));
@@ -1417,13 +2045,63 @@ Notlar:
             if (Filters.ExcludeKapanis)
                 q = q.Where(r => !string.Equals((r.FisTuru ?? "").Trim(), "Kapanış", StringComparison.OrdinalIgnoreCase));
 
-            return q
-                .OrderBy(r => r.PostingDate ?? DateTime.MinValue)
-                .ThenBy(r => r.Kebir)
-                .ThenBy(r => r.HesapKodu)
-                .ThenBy(r => r.EntryNumber)
-                .ThenBy(r => r.EntryCounter ?? 0)
-                .ToList();
+            if (Filters.HasQuickFilter)
+            {
+                var col = NormalizeQuickFilterField(Filters.QuickColumn ?? "");
+                var val = (Filters.QuickValue ?? "").Trim();
+                var op = Filters.QuickOp;
+
+                if (!string.IsNullOrWhiteSpace(col) && !string.IsNullOrWhiteSpace(val))
+                {
+                    static string S(string? x) => (x ?? "").Trim();
+
+                    bool Match(string? cellRaw)
+                    {
+                        var cell = S(cellRaw);
+
+                        return op switch
+                        {
+                            QuickFilterOp.Equals => string.Equals(cell, val, StringComparison.OrdinalIgnoreCase),
+                            QuickFilterOp.NotEquals => !string.Equals(cell, val, StringComparison.OrdinalIgnoreCase),
+                            QuickFilterOp.Contains => cell.Contains(val, StringComparison.OrdinalIgnoreCase),
+                            QuickFilterOp.NotContains => !cell.Contains(val, StringComparison.OrdinalIgnoreCase),
+                            _ => true
+                        };
+                    }
+
+                    q = q.Where(r =>
+                    {
+                        var cellText = GetCellTextForQuickFilter(r, col);
+                        return Match(cellText);
+                    });
+                }
+            }
+
+            return q.ToList();
+        }
+
+        private async Task RefreshViewAsync(
+            IEnumerable<MuavinRow>? baseSource = null,
+            bool keepFisFocus = false,
+            bool recomputeContra = true,
+            string? status = null)
+        {
+            IEnumerable<MuavinRow> src = baseSource ?? _allRows;
+
+            if (keepFisFocus && IsFisFocusActive && !string.IsNullOrWhiteSpace(_focusedFisNo))
+            {
+                var fno = _focusedFisNo.Trim();
+                src = src.Where(r => string.Equals((r.EntryNumber ?? "").Trim(), fno, StringComparison.Ordinal));
+            }
+
+            var filtered = ApplyFilterLogic(src);
+            ApplyCurrentFilterToView(filtered);
+
+            if (recomputeContra && _dataOrigin == DataOrigin.Preview)
+                await EnsureKarsiHesapForVisibleIfMissingAsync();
+
+            if (!string.IsNullOrWhiteSpace(status))
+                StatusText = status;
         }
 
         private void ApplyCurrentFilterToView(IList<MuavinRow> data)
@@ -1463,7 +2141,6 @@ Notlar:
         }
 
         // ================== CONTEXT MENU UI HELPERS =====================
-
         public string ContextMenuFisHeader
         {
             get
@@ -1573,8 +2250,7 @@ Notlar:
             }
         }
 
-        // UI’dan çağrılır (code-behind)
-        public void ToggleFocusByFisNo(string entryNo)
+        public async void ToggleFocusByFisNo(string entryNo)
         {
             entryNo = (entryNo ?? "").Trim();
             if (string.IsNullOrWhiteSpace(entryNo)) return;
@@ -1599,7 +2275,7 @@ Notlar:
 
                 _focusedFisRowCount = list.Count;
 
-                ApplyCurrentFilterToView(list);
+                await RefreshViewAsync(baseSource: _allRows, keepFisFocus: true, recomputeContra: (_dataOrigin == DataOrigin.Preview));
                 ApplyFixedSortForFisFocus();
 
                 RaiseFisFocusUiChanged();
@@ -1626,7 +2302,7 @@ Notlar:
 
             _focusedFisRowCount = next.Count;
 
-            ApplyCurrentFilterToView(next);
+            await RefreshViewAsync(baseSource: _allRows, keepFisFocus: true, recomputeContra: (_dataOrigin == DataOrigin.Preview));
             ApplyFixedSortForFisFocus();
 
             RaiseFisFocusUiChanged();
@@ -1649,15 +2325,12 @@ Notlar:
 
             _focusedFisRowCount = 0;
 
-            if (_rowsBeforeFisFocus != null)
-            {
-                ApplyCurrentFilterToView(_rowsBeforeFisFocus);
-            }
-            else
-            {
-                var filtered = ApplyFilterLogic(_allRows);
-                ApplyCurrentFilterToView(filtered);
-            }
+            var filtered = ApplyFilterLogic(_allRows);
+            ApplyCurrentFilterToView(filtered);
+
+            // ✅ DB modunda UI-side karşı hesap hesaplanmaz.
+            if (_dataOrigin == DataOrigin.Preview)
+                _ = EnsureKarsiHesapForVisibleIfMissingAsync();
 
             RestoreSortSnapshot(_sortBeforeFisFocus);
             _userChangedSort = _userChangedSortBeforeFisFocus;
@@ -1670,15 +2343,6 @@ Notlar:
 
             if (resetStatus)
                 StatusText = "Fiş odağı kapatıldı.";
-        }
-
-        private static string BuildGroupKey(MuavinRow r)
-        {
-            var d = r.PostingDate?.ToString("yyyy-MM-dd") ?? "";
-            var no = r.EntryNumber ?? "";
-            if (r.FisTuru is "Açılış" or "Kapanış") return $"{no}|{d}";
-            var doc = r.DocumentNumber ?? "";
-            return string.IsNullOrWhiteSpace(doc) ? $"{no}|{d}" : $"{no}|{d}|DOC:{doc}";
         }
 
         public void ApplyFisTuruFromGrid(MuavinRow row, string? newFisTuru)
@@ -1701,9 +2365,11 @@ Notlar:
                 return;
             }
 
-            // Bu değişiklik context-menu ile aynı mantıkta: aynı EntryNumber olan tüm satırlara uygula
+            // ✅ Tek doğru anahtar: GroupKey (yoksa fallback üret)
+            var key = KeyFor(row);
+
             var targets = _allRows
-                .Where(r => string.Equals((r.EntryNumber ?? "").Trim(), entryNo, StringComparison.Ordinal))
+                .Where(r => string.Equals(KeyFor(r), key, StringComparison.Ordinal))
                 .ToList();
 
             if (targets.Count == 0)
@@ -1712,23 +2378,147 @@ Notlar:
                 return;
             }
 
-            // GroupKey yoksa üret (DB override için şart)
+            // DB load'da GroupKey zaten var; preview'da yoksa üret.
             foreach (var r in targets)
                 if (string.IsNullOrWhiteSpace(r.GroupKey))
-                    r.GroupKey = BuildGroupKey(r);
+                    r.GroupKey = BuildGroupKeyFallback(r);
 
             var alreadySame = targets.All(r => string.Equals((r.FisTuru ?? "").Trim(), ft, StringComparison.OrdinalIgnoreCase));
             if (alreadySame) return;
 
-            // ✅ Sessiz uygula: pop-up yok, ama Undo + dirty set + ekran refresh var
             ApplyFisTuruToTargetsCore(entryNo, targets, ft);
-
-            // Not: ApplyFisTuruToTargetsCore zaten StatusText basıyor.
-            // İstersen burada daha net bir mesaj verebilirsin.
         }
 
+        private string _uiStatusMessage = "";
+        public string UiStatusMessage
+        {
+            get => _uiStatusMessage;
+            set { _uiStatusMessage = value; OnPropertyChanged(); }
+        }
 
+        private void ComputeFisBalanceFlags(IList<MuavinRow> rows)
+        {
+            if (rows == null || rows.Count == 0) return;
 
+            foreach (var r in rows)
+            {
+                r.FisTotalBorc = 0m;
+                r.FisTotalAlacak = 0m;
+                r.FisDiff = 0m;
+                r.IsFisImbalanced = false;
+            }
+
+            foreach (var g in rows.GroupBy(r => KeyFor(r)))
+            {
+                decimal tb = 0m, ta = 0m;
+
+                foreach (var r in g)
+                {
+                    tb += r.Borc;
+                    ta += r.Alacak;
+                }
+
+                var diff = tb - ta;
+                var imbalanced = diff != 0m;
+
+                foreach (var r in g)
+                {
+                    r.FisTotalBorc = tb;
+                    r.FisTotalAlacak = ta;
+                    r.FisDiff = diff;
+                    r.IsFisImbalanced = imbalanced;
+                }
+            }
+        }
+
+        public static bool IsSpecialClosingType(string? fisTuru)
+        {
+            var ft = (fisTuru ?? "").Trim();
+
+            return ft.Equals("Açılış", StringComparison.OrdinalIgnoreCase)
+                || ft.Equals("Kapanış", StringComparison.OrdinalIgnoreCase)
+                || ft.Equals("Gelir Tablosu Kapanış", StringComparison.OrdinalIgnoreCase)
+                || ft.Equals("Yansıtma Kapama", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task ApplyQuickFilterFromUiAsync(string field, string value, string mode)
+        {
+            field = (field ?? "").Trim();
+            value = (value ?? "").Trim();
+            mode = (mode ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(field) || string.IsNullOrWhiteSpace(value))
+                return;
+
+            field = NormalizeQuickFilterField(field);
+
+            Filters.QuickColumn = field;
+            Filters.QuickValue = value;
+
+            Filters.QuickOp = mode switch
+            {
+                "Equals" => QuickFilterOp.Equals,
+                "NotEquals" => QuickFilterOp.NotEquals,
+                "Contains" => QuickFilterOp.Contains,
+                "NotContains" => QuickFilterOp.NotContains,
+                _ => QuickFilterOp.Equals
+            };
+
+            await ApplyFilters();
+        }
+
+        // ================== ✅ GroupKey üretimi (UI tarafı, DB ile uyumlu) ==================
+        private static string NormalizeSourceFileForUi(string? sourceFile)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFile)) return "_unknown_";
+            try { return Path.GetFileName(sourceFile.Trim()); }
+            catch { return sourceFile.Trim(); }
+        }
+
+        private static bool IsTxtLikeSource(string? normalizedSourceFile)
+        {
+            var s = (normalizedSourceFile ?? "").Trim();
+            if (s.Length == 0) return false;
+
+            var ext = Path.GetExtension(s);
+            return ext.Equals(".txt", StringComparison.OrdinalIgnoreCase)
+                || ext.Equals(".csv", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Preview/import öncesi üretimde: txt/csv ise DOC ekleme
+        private static string BuildGroupKeyForUi(MuavinRow r, string normalizedSourceFile)
+        {
+            var d = r.PostingDate?.ToString("yyyy-MM-dd") ?? "";
+            var no = r.EntryNumber ?? "";
+
+            if (IsSpecialClosingType(r.FisTuru))
+                return $"{no}|{d}";
+
+            if (IsTxtLikeSource(normalizedSourceFile))
+                return $"{no}|{d}";
+
+            var doc = r.DocumentNumber ?? "";
+            return string.IsNullOrWhiteSpace(doc) ? $"{no}|{d}" : $"{no}|{d}|DOC:{doc}";
+        }
+
+        [RelayCommand]
+        private void OpenLogsFolder()
+        {
+            LogPaths.OpenLogFolderInExplorer();
+            StatusText = "Log klasörü açıldı.";
+        }
+
+        // Source bilinmiyorsa: eski davranış (fallback)
+        private static string BuildGroupKeyFallback(MuavinRow r)
+        {
+            var d = r.PostingDate?.ToString("yyyy-MM-dd") ?? "";
+            var no = r.EntryNumber ?? "";
+            if (IsSpecialClosingType(r.FisTuru)) return $"{no}|{d}";
+            var doc = r.DocumentNumber ?? "";
+            return string.IsNullOrWhiteSpace(doc) ? $"{no}|{d}" : $"{no}|{d}|DOC:{doc}";
+        }
+
+        
     }
 
     internal sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T> where T : class

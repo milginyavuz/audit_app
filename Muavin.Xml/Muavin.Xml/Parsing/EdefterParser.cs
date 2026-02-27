@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Muavin.Xml.Util;
 
@@ -20,16 +21,19 @@ namespace Muavin.Xml.Parsing
 
         /// <summary>
         /// eDefter xml içinden şirket bilgisi okur (prefix/namespace bağımsız)
-        /// ünvan:   <gl-bus:entityName>
-        /// vergiNo: <gl-bus:taxID>
+        /// Etiket analizine göre öncelik:
+        /// - Vergi No: taxID → identifier (10 haneli VKN)
+        /// - Ünvan: entityName → organizationIdentifier → entriesComment (heuristic)
         /// </summary>
         public CompanyInfo ParseCompanyInfo(string xmlPath)
         {
             if (string.IsNullOrWhiteSpace(xmlPath) || !File.Exists(xmlPath))
                 return new CompanyInfo(null, null);
 
-            string? entityName = null;
             string? taxId = null;
+            string? entityName = null;
+            string? organizationIdentifier = null;
+            string? entriesComment = null;
 
             using var fs = File.OpenRead(xmlPath);
             using var xr = XmlReader.Create(fs, SecureReaderSettings());
@@ -39,30 +43,64 @@ namespace Muavin.Xml.Parsing
                 if (xr.NodeType != XmlNodeType.Element)
                     continue;
 
-                if (entityName == null && xr.LocalName.Equals("entityName", StringComparison.OrdinalIgnoreCase))
+                var name = xr.LocalName;
+
+                // --- TaxId candidates ---
+                if (taxId == null && name.Equals("taxID", StringComparison.OrdinalIgnoreCase))
                 {
-                    var v = xr.ReadElementContentAsString();
-                    if (!string.IsNullOrWhiteSpace(v))
-                        entityName = v.Trim();
+                    var v = xr.ReadElementContentAsString()?.Trim();
+                    taxId = NormalizeTaxId(v);
                     continue;
                 }
 
-                if (taxId == null && xr.LocalName.Equals("taxID", StringComparison.OrdinalIgnoreCase))
+                if (taxId == null && name.Equals("identifier", StringComparison.OrdinalIgnoreCase))
                 {
-                    var v = xr.ReadElementContentAsString();
-                    if (!string.IsNullOrWhiteSpace(v))
-                        taxId = v.Trim();
+                    var v = xr.ReadElementContentAsString()?.Trim();
+                    taxId = NormalizeTaxId(v);
                     continue;
                 }
 
-                if (entityName != null && taxId != null)
+                // --- Title candidates ---
+                if (entityName == null && name.Equals("entityName", StringComparison.OrdinalIgnoreCase))
+                {
+                    var v = xr.ReadElementContentAsString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(v))
+                        entityName = v;
+                    continue;
+                }
+
+                if (organizationIdentifier == null && name.Equals("organizationIdentifier", StringComparison.OrdinalIgnoreCase))
+                {
+                    var v = xr.ReadElementContentAsString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(v))
+                        organizationIdentifier = v;
+                    continue;
+                }
+
+                if (entriesComment == null && name.Equals("entriesComment", StringComparison.OrdinalIgnoreCase))
+                {
+                    var v = xr.ReadElementContentAsString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(v))
+                        entriesComment = v;
+                    continue;
+                }
+
+                // yeterli bilgi geldiyse çık
+                if (!string.IsNullOrWhiteSpace(taxId) &&
+                    (!string.IsNullOrWhiteSpace(entityName) || !string.IsNullOrWhiteSpace(organizationIdentifier)))
                     break;
             }
 
-            if (string.IsNullOrWhiteSpace(taxId)) taxId = null;
-            if (string.IsNullOrWhiteSpace(entityName)) entityName = null;
+            // final name resolve
+            var finalName =
+                NormalizeTitle(entityName) ??
+                NormalizeTitle(organizationIdentifier) ??
+                TryExtractTitleFromEntriesComment(entriesComment);
 
-            return new CompanyInfo(taxId, entityName);
+            taxId = string.IsNullOrWhiteSpace(taxId) ? null : taxId.Trim();
+            finalName = string.IsNullOrWhiteSpace(finalName) ? null : finalName.Trim();
+
+            return new CompanyInfo(taxId, finalName);
         }
 
         // backward compatibility
@@ -78,6 +116,77 @@ namespace Muavin.Xml.Parsing
                 XmlResolver = null
             };
 
+        // ===================== COMPANY INFO HELPERS =====================
+
+        // Identifier/taxID içinden VKN yakala:
+        // - sadece rakamları al
+        // - 10 hane varsa VKN olarak kabul et
+        // - 11 hane varsa (TCKN vb) şirket için istemiyoruz; ama bazı dosyalarda gelebilir:
+        //   10 hane yoksa 11'i de döndürmeyelim (şirket ekranı VKN bekliyor).
+        private static string? NormalizeTaxId(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+
+            var digits = new string(raw.Where(char.IsDigit).ToArray());
+            if (digits.Length == 0) return null;
+
+            // 10 hane VKN
+            if (digits.Length == 10)
+                return digits;
+
+            // bazı identifier alanlarında etrafında başka şeyler olabilir; içinde 10 hane arayalım
+            var m10 = Regex.Match(digits, @"\d{10}");
+            if (m10.Success)
+                return m10.Value;
+
+            // 11 hane bulunsa bile burada VKN olarak kabul etmiyoruz
+            return null;
+        }
+
+        private static string? NormalizeTitle(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var s = raw.Trim();
+
+            // çok kısa / anlamsız şeyleri ele
+            if (s.Length < 3) return null;
+
+            // tırnak vs. temizle
+            s = s.Trim('\"', '\'', '’', '“', '”');
+
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+
+        // entriesComment bazen: "01.01.2024 - 31.01.2024 TARİHLERİ ARASI FKK ... A.Ş"
+        // Tarih + dönem ifadelerini temizleyip geriye "şirket adı" gibi kalan kısmı dön.
+        private static string? TryExtractTitleFromEntriesComment(string? entriesComment)
+        {
+            if (string.IsNullOrWhiteSpace(entriesComment)) return null;
+
+            var t = entriesComment.Trim();
+
+            // tarihleri temizle (dd.MM.yyyy ve yyyy-MM-dd)
+            t = Regex.Replace(t, @"\b\d{2}\.\d{2}\.\d{4}\b", " ");
+            t = Regex.Replace(t, @"\b\d{4}-\d{2}-\d{2}\b", " ");
+
+            // tipik dönem kelimelerini temizle
+            t = Regex.Replace(t, @"(?i)\b(tarihler[iı]\s*aras[iı]|tarihler\s*arası|dönem|donem|arası|arasi|tarihleri)\b", " ");
+
+            // tire vs fazlalık
+            t = t.Replace("-", " ");
+            t = Regex.Replace(t, @"\s+", " ").Trim();
+
+            // kalan şey sadece sayılardan ibaretse veya çok kısa ise ele
+            if (t.Length < 5) return null;
+            if (t.All(ch => char.IsDigit(ch) || char.IsWhiteSpace(ch))) return null;
+
+            // Kalan metin hâlâ “01 01 2024 31 01 2024 ...” gibi ise ele
+            var digitsRatio = t.Count(char.IsDigit) / (double)Math.Max(1, t.Length);
+            if (digitsRatio > 0.40) return null;
+
+            return NormalizeTitle(t);
+        }
+
         // --- yardımcılar ---
         private static string? TrimZeros(string? raw)
         {
@@ -86,11 +195,11 @@ namespace Muavin.Xml.Parsing
             return string.IsNullOrEmpty(s) ? "0" : s;
         }
 
-        private static readonly System.Text.RegularExpressions.Regex[] _rxDocNo =
+        private static readonly Regex[] _rxDocNo =
         {
-            new System.Text.RegularExpressions.Regex(@"(?:fatura|belge|irsaliye)\s*no[:\-]?\s*([A-Z0-9\/\-\.]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
-            new System.Text.RegularExpressions.Regex(@"\b(?:inv|ftr|fat|ft)\s*[:\-]?\s*([A-Z0-9\/\-\.]{4,})", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
-            new System.Text.RegularExpressions.Regex(@"\bno[:\-]?\s*([A-Z0-9\/\-\.]{4,})", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            new Regex(@"(?:fatura|belge|irsaliye)\s*no[:\-]?\s*([A-Z0-9\/\-\.]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex(@"\b(?:inv|ftr|fat|ft)\s*[:\-]?\s*([A-Z0-9\/\-\.]{4,})", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex(@"\bno[:\-]?\s*([A-Z0-9\/\-\.]{4,})", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         };
 
         private static string? TryExtractDocNo(string? text)
@@ -160,7 +269,7 @@ namespace Muavin.Xml.Parsing
             if (string.IsNullOrWhiteSpace(full))
                 return null;
 
-            full = System.Text.RegularExpressions.Regex.Replace(
+            full = Regex.Replace(
                 full,
                 @"^(\d{3})-\1-(.+)$",
                 "$1-$2"
@@ -391,7 +500,6 @@ namespace Muavin.Xml.Parsing
 
                 (row.FisTuru, row.FisTipi) = InferFisXml(row.Aciklama, posting.Value);
 
-
                 rows.Add(row);
                 ResetDetail();
             }
@@ -458,18 +566,33 @@ namespace Muavin.Xml.Parsing
                             if (!matched && P_DETAIL_POSTINGDATE.Contains(path)) { d_postingDate = ParseDate(val); matched = true; }
 
                             // fallback (zayıf eşleştirme)
-                            if (!matched && inDetail)
+                            if (!matched && !inDetail)
                             {
-                                if (path.EndsWith("/amount", StringComparison.Ordinal)) { d_amount = ParseDecimal(val); matched = true; }
-                                else if (path.EndsWith("/debitcreditcode", StringComparison.Ordinal)) { d_dc = val; matched = true; }
-                                else if (path.EndsWith("/accountmainid", StringComparison.Ordinal)) { d_mainId = val; matched = true; }
-                                else if (path.EndsWith("/accountsubid", StringComparison.Ordinal)) { d_subId = val; matched = true; }
+                                if (path.EndsWith("/postingdate", StringComparison.Ordinal) ||
+                                    path.EndsWith("/documentdate", StringComparison.Ordinal))
+                                {
+                                    h_date = ParseDate(val);
+                                    matched = true;
+                                }
+                                else if (path.EndsWith("/entrynumber", StringComparison.Ordinal) ||
+                                         path.EndsWith("/entryno", StringComparison.Ordinal))
+                                {
+                                    h_entryNo = val;
+                                    matched = true;
+                                }
                                 else if (path.EndsWith("/documentnumber", StringComparison.Ordinal) ||
-                                         path.EndsWith("/documentreference", StringComparison.Ordinal)) { h_docNo = val; matched = true; }
-                                else if (path.EndsWith("/postingdate", StringComparison.Ordinal) ||
-                                         path.EndsWith("/documentdate", StringComparison.Ordinal)) { d_postingDate = ParseDate(val); matched = true; }
-                                else if (path.EndsWith("/detailcomment", StringComparison.Ordinal) ||
-                                         path.EndsWith("/documenttypedescription", StringComparison.Ordinal)) { d_note = Combine(d_note, val); matched = true; }
+                                         path.EndsWith("/documentreference", StringComparison.Ordinal))
+                                {
+                                    h_docNo = val;
+                                    matched = true;
+                                }
+                                else if (path.EndsWith("/entriescomment", StringComparison.Ordinal) ||
+                                         path.EndsWith("/description", StringComparison.Ordinal) ||
+                                         path.EndsWith("/headercomment", StringComparison.Ordinal))
+                                {
+                                    h_headerNote = Combine(h_headerNote, val);
+                                    matched = true;
+                                }
                             }
 
                             if (matched) hit++;

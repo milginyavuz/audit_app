@@ -1,0 +1,81 @@
+﻿<Window x:Class="Muavin.Desktop.MizanDrillDownWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hesap Detayı"
+        Height="650" Width="1200"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Başlık -->
+        <TextBlock Text="{Binding TitleText}"
+                   FontSize="16"
+                   FontWeight="Bold" />
+
+        <TextBlock Grid.Row="1"
+                   Margin="0,6,0,10"
+                   Text="{Binding SubTitleText}"
+                   Foreground="Gray"/>
+
+        <!-- Üst bar: Excel -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
+            <Button Content="Excel'e Aktar"
+                    Width="110"
+                    Height="26"
+                    Click="BtnExportExcel_Click"/>
+        </StackPanel>
+
+        <!-- Liste -->
+        <GroupBox Grid.Row="3" Header="{Binding RowsHeaderText}">
+            <DataGrid ItemsSource="{Binding PeriodRows}"
+          AutoGenerateColumns="False"
+          IsReadOnly="True"
+          CanUserAddRows="False"
+          HeadersVisibility="Column"
+          GridLinesVisibility="Horizontal"
+          RowHeaderWidth="0">
+
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFisImbalanced}" Value="True">
+                                <Setter Property="Background" Value="#FFFFE5E5"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Tarih" Binding="{Binding PostingDate, StringFormat={}{0:dd.MM.yyyy}}" Width="95"/>
+                    <DataGridTextColumn Header="Fiş No" Binding="{Binding EntryNumber}" Width="110"/>
+                    <DataGridTextColumn Header="Kebir" Binding="{Binding Kebir}" Width="70"/>
+                    <DataGridTextColumn Header="Hesap" Binding="{Binding HesapKodu}" Width="140"/>
+                    <DataGridTextColumn Header="Hesap Adı" Binding="{Binding HesapAdi}" Width="220"/>
+                    <DataGridTextColumn Header="Açıklama" Binding="{Binding Aciklama}" Width="*"/>
+                    <DataGridTextColumn Header="Borç" Binding="{Binding Borc, StringFormat={}{0:N2}}" Width="110"/>
+                    <DataGridTextColumn Header="Alacak" Binding="{Binding Alacak, StringFormat={}{0:N2}}" Width="110"/>
+                    <DataGridTextColumn Header="Fiş Fark"
+                    Binding="{Binding FisDiff, StringFormat={}{0:N2}}"
+                    Width="110"/>
+
+                    <DataGridTemplateColumn Header="Fiş" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="Detay"
+                    Padding="8,2"
+                    Click="BtnFisDetay_Click"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </GroupBox>
+    </Grid>
+</Window>

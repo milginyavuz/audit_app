@@ -1,4 +1,4 @@
-﻿// TxtMuavinParser.cs (UPDATED)
+﻿// TxtMuavinParser.cs (FINAL - MultiSpace fixed-width kayma çözümü dahil)
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -50,9 +50,10 @@ namespace Muavin.Xml.Parsing
             return null;
         }
 
-        private enum Delim { Unknown, Semicolon, Tab, Comma }
+        // MultiSpace = fixed-width (2+ boşluk ayırıcı) -> header pozisyonundan substring okunur
+        private enum Delim { Unknown, Semicolon, Tab, Pipe, MultiSpace }
 
-        // ---------- NEW: opening/closing detection helpers (AND rule) ----------
+        // ---------- Açılış/Kapanış ----------
         private static bool ContainsAcilis(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return false;
@@ -69,7 +70,6 @@ namespace Muavin.Xml.Parsing
 
         private static (string tur, string? tip) InferFisTxt(string? fisTuruField, string? aciklama)
         {
-            // Normalize field
             string ft = (fisTuruField ?? "").Trim().ToLowerInvariant();
 
             bool fieldAcilis = ft.Contains("açılış") || ft.Contains("acilis") || ft.Contains("açilis") || ft.Contains("opening");
@@ -78,11 +78,9 @@ namespace Muavin.Xml.Parsing
             bool descAcilis = ContainsAcilis(aciklama);
             bool descKapanis = ContainsKapanis(aciklama);
 
-            // AND rule:
             if (fieldAcilis && descAcilis) return ("Açılış", "Açılış");
             if (fieldKapanis && descKapanis) return ("Kapanış", "Kapanış");
 
-            // If field empty, allow description-only inference (optional but useful)
             if (string.IsNullOrWhiteSpace(ft))
             {
                 if (descAcilis) return ("Açılış", "Açılış");
@@ -91,7 +89,6 @@ namespace Muavin.Xml.Parsing
 
             return ("Mahsup", null);
         }
-        // ---------------------------------------------------------------------
 
         public List<MuavinRow> Parse(string filePath, string companyCode, out int periodYear, out int periodMonth)
         {
@@ -111,19 +108,28 @@ namespace Muavin.Xml.Parsing
                 Dictionary<string, int>? headerMap = null;
                 Delim delim = Delim.Unknown;
 
+                // MultiSpace/fixed-width için header pozisyonları
+                int[]? fwStarts = null;
+                int[]? fwEnds = null;
+                List<string>? headerCellsOriginal = null;
+                string? headerLineOriginal = null;
+
                 string? line;
+
+                // ---------------- header bul ----------------
                 while ((line = reader.ReadLine()) != null)
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    var trimmed = line.Trim();
+                    var trimmed = line.TrimEnd();
 
                     if (trimmed.Equals("\"Muavin Defter\"", StringComparison.OrdinalIgnoreCase) ||
                         trimmed.Equals("Muavin Defter", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    delim = DetectDelimiter(trimmed);
-                    var headers = SplitSmart(trimmed, delim);
+                    delim = DetectDelimiterSmart(trimmed);
+
+                    // header adaylarını al
+                    var headers = SplitSmartForHeader(trimmed, delim);
 
                     bool looksHeader =
                         headers.Any(h => CanonicalHeader(NormalizeKey(h)) == "tarih") &&
@@ -141,6 +147,15 @@ namespace Muavin.Xml.Parsing
                     if (!headerMap.ContainsKey("hesapkodu") && headerMap.ContainsKey("hesapadi"))
                         headerMap["hesapkodu"] = 0;
 
+                    // MultiSpace ise fixed-width layout çıkar (kolon kaymasını bitirir)
+                    if (delim == Delim.MultiSpace)
+                    {
+                        headerLineOriginal = trimmed;
+                        headerCellsOriginal = headers;
+
+                        BuildFixedWidthLayout(headerLineOriginal, headerCellsOriginal, out fwStarts, out fwEnds);
+                    }
+
                     break;
                 }
 
@@ -155,18 +170,31 @@ namespace Muavin.Xml.Parsing
 
                 DateTime? min = null;
                 DateTime? max = null;
-                var ymSet = new HashSet<int>(); // y*100+m
+                var ymSet = new HashSet<int>();
 
+                // ---------------- data oku ----------------
                 while ((line = reader.ReadLine()) != null)
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
 
-                    var parts = SplitSmart(line, delim);
-                    if (parts.Count == 0) continue;
-
                     string Get(string key)
                     {
                         if (!headerMap.TryGetValue(key, out var ix)) return "";
+
+                        // Fixed-width okuma (MultiSpace): header pozisyonlarına göre substring
+                        if (delim == Delim.MultiSpace && fwStarts != null && fwEnds != null)
+                        {
+                            if (ix < 0 || ix >= fwStarts.Length) return "";
+                            int s = fwStarts[ix];
+                            int e = fwEnds[ix];
+                            if (s >= line.Length) return "";
+                            if (e > line.Length) e = line.Length;
+                            if (e <= s) return "";
+                            return line.Substring(s, e - s).Trim();
+                        }
+
+                        // Diğer delimiterlar: split ile oku
+                        var parts = SplitSmart(line, delim);
                         if (ix < 0 || ix >= parts.Count) return "";
                         return parts[ix];
                     }
@@ -189,6 +217,12 @@ namespace Muavin.Xml.Parsing
                     var hesapKodu = string.IsNullOrWhiteSpace(hesapKoduRaw) ? null : hesapKoduRaw.Trim();
                     var hesapAdi = string.IsNullOrWhiteSpace(hesapAdiRaw) ? null : hesapAdiRaw.Trim();
 
+                    if (string.IsNullOrWhiteSpace(hesapKodu) && string.IsNullOrWhiteSpace(hesapAdi))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
                     var fisTuruField = NullIfWhite(Get("fisturu"));
                     var fisNo = NullIfWhite(Get("fisno")) ?? NullIfWhite(Get("fisnumarasi")) ?? NullIfWhite(Get("fisnumarasi2"));
                     var aciklama = NullIfWhite(Get("aciklama"));
@@ -201,16 +235,44 @@ namespace Muavin.Xml.Parsing
                     if (hasBorc) borc = ParseDecimalFlexible(Get("borc"));
                     if (hasAlacak) alacak = ParseDecimalFlexible(Get("alacak"));
 
+                    // hem borç hem alacak doluysa normalize et
+                    if (borc > 0m && alacak > 0m)
+                    {
+                        if (borc > alacak) alacak = 0m;
+                        else borc = 0m;
+                    }
+
+                    // Eğer BORC/ALACAK kolonları yoksa: tutar + dc ile türet
                     if (!hasBorc && !hasAlacak)
                     {
-                        var tutar = ParseDecimalFlexible(Get("tutar"));
-                        var dc = NormalizeDC(NullIfWhite(Get("debitcredit")) ?? NullIfWhite(Get("borcalacak")) ?? NullIfWhite(Get("dc")));
-                        if (dc == "D") borc = tutar;
-                        else if (dc == "C") alacak = tutar;
+                        var tutarRaw = Get("tutar");
+                        var tutar = ParseDecimalFlexible(tutarRaw);
+
+                        var dc = NormalizeDC(
+                            NullIfWhite(Get("debitcredit")) ??
+                            NullIfWhite(Get("borcalacak")) ??
+                            NullIfWhite(Get("dc"))
+                        );
+
+                        if (dc == "D") borc = Math.Abs(tutar);
+                        else if (dc == "C") alacak = Math.Abs(tutar);
                         else
                         {
                             if (tutar == 0m) { skipped++; continue; }
-                            borc = tutar;
+                            if (tutar < 0m) alacak = Math.Abs(tutar);
+                            else borc = tutar;
+                        }
+                    }
+
+                    // Eğer BORC/ALACAK kolonları var ama ikisi de 0 ise:
+                    // (TUM_HESAPLAR gibi bazı dosyalarda tutar kolonu da olabilir)
+                    if (borc == 0m && alacak == 0m && headerMap.ContainsKey("tutar"))
+                    {
+                        var t = ParseDecimalFlexible(Get("tutar"));
+                        if (t != 0m)
+                        {
+                            if (t < 0m) alacak = Math.Abs(t);
+                            else borc = t;
                         }
                     }
 
@@ -231,8 +293,6 @@ namespace Muavin.Xml.Parsing
                     }
 
                     var docNo = TryExtractDocNo(aciklama);
-
-                    //  AND-rule inference for FisTuru/FisTipi
                     var (fisTuru, fisTipi) = InferFisTxt(fisTuruField, aciklama);
 
                     rows.Add(new MuavinRow
@@ -241,8 +301,7 @@ namespace Muavin.Xml.Parsing
                         EntryNumber = entryNumber,
                         EntryCounter = ++lineNo,
 
-                        // txt için stabil fiş bazlı GroupKey:
-                        // override kalıcılığı için DOC vb. oynak alanlar kesinlikle burada olmamalı.
+                        // TXT için stabil groupkey (override kalıcılığı)
                         GroupKey = $"{entryNumber}|{d:yyyy-MM-dd}",
 
                         FisTuru = fisTuru,
@@ -283,7 +342,6 @@ namespace Muavin.Xml.Parsing
         }
 
         // ---------------- Encoding / Reader ----------------
-
         private static (StreamReader reader, bool usedFallback) OpenSmartWithMojibakeFallback(string filePath)
         {
             var utf = new StreamReader(
@@ -294,10 +352,7 @@ namespace Muavin.Xml.Parsing
 
             var peek = new List<string>();
             for (int i = 0; i < 5 && !utf.EndOfStream; i++)
-            {
-                var l = utf.ReadLine() ?? "";
-                peek.Add(l);
-            }
+                peek.Add(utf.ReadLine() ?? "");
 
             bool mojibake = peek.Any(l => l.Contains('�'));
             utf.Dispose();
@@ -314,12 +369,29 @@ namespace Muavin.Xml.Parsing
             return (new StreamReader(filePath, Encoding.GetEncoding(1254)), true);
         }
 
-        private static Delim DetectDelimiter(string line)
+        private static Delim DetectDelimiterSmart(string headerLine)
         {
-            if (line.Contains('\t')) return Delim.Tab;
-            if (line.Contains(';')) return Delim.Semicolon;
-            if (line.Contains(',')) return Delim.Comma;
-            return Delim.Semicolon;
+            if (headerLine.Contains('\t')) return Delim.Tab;
+            if (headerLine.TrimStart().StartsWith("|")) return Delim.Pipe;
+            if (headerLine.Contains(';')) return Delim.Semicolon;
+
+            // fixed-width: 2+ boşlukla ayrılan başlıklar
+            if (Regex.IsMatch(headerLine, @"\S\s{2,}\S")) return Delim.MultiSpace;
+
+            // (Virgül yok: TR ondalık virgül yüzünden kolon bozar)
+            return Delim.MultiSpace;
+        }
+
+        // Header split: MultiSpace’de split yapıyoruz, ama data satırları substring ile okunacak
+        private static List<string> SplitSmartForHeader(string line, Delim delim)
+        {
+            return delim switch
+            {
+                Delim.Tab => line.Split('\t').Select(Unquote).ToList(),
+                Delim.Pipe => SplitPipeRow(line),
+                Delim.MultiSpace => Regex.Split(line.Trim(), @"\s{2,}").Select(x => Unquote(x).Trim()).Where(x => x.Length > 0).ToList(),
+                _ => SplitCsvLike(line, ';'),
+            };
         }
 
         private static List<string> SplitSmart(string line, Delim delim)
@@ -327,9 +399,50 @@ namespace Muavin.Xml.Parsing
             return delim switch
             {
                 Delim.Tab => line.Split('\t').Select(Unquote).ToList(),
-                Delim.Comma => SplitCsvLike(line, ','),
+                Delim.Pipe => SplitPipeRow(line),
+                Delim.MultiSpace => Regex.Split(line.Trim(), @"\s{2,}").Select(x => Unquote(x).Trim()).ToList(),
                 _ => SplitCsvLike(line, ';'),
             };
+        }
+
+        private static List<string> SplitPipeRow(string line)
+        {
+            // | A | B | C | -> ["A","B","C"]
+            var t = line.Trim();
+            if (t.StartsWith("|")) t = t.Substring(1);
+            if (t.EndsWith("|")) t = t.Substring(0, t.Length - 1);
+
+            return t.Split('|')
+                    .Select(x => Unquote(x).Trim())
+                    .ToList();
+        }
+
+        // FIXED-WIDTH: header cell pozisyonlarına göre start/end çıkar
+        private static void BuildFixedWidthLayout(string headerLine, List<string> headerCells, out int[] starts, out int[] ends)
+        {
+            var sList = new List<int>();
+            int cursor = 0;
+
+            for (int i = 0; i < headerCells.Count; i++)
+            {
+                var cell = headerCells[i];
+                int ix = headerLine.IndexOf(cell, cursor, StringComparison.Ordinal);
+                if (ix < 0)
+                {
+                    // bulamazsa: cursor'u kullan (fail-safe)
+                    ix = cursor;
+                }
+
+                sList.Add(ix);
+                cursor = ix + cell.Length;
+            }
+
+            starts = sList.ToArray();
+            ends = new int[starts.Length];
+            for (int i = 0; i < starts.Length; i++)
+            {
+                ends[i] = (i == starts.Length - 1) ? headerLine.Length : starts[i + 1];
+            }
         }
 
         private static List<string> SplitCsvLike(string line, char sep)
@@ -394,35 +507,59 @@ namespace Muavin.Xml.Parsing
             return filtered.ToString();
         }
 
+        // Tek yerde kanonik eşleme (sende önce çok tekrar vardı; temizledim)
         private static string CanonicalHeader(string normalized)
         {
-            if (normalized.Contains("hesapkodu") || normalized == "kodu") return "hesapkodu";
-            if (normalized.Contains("hesapadi") || normalized.Contains("unvan")) return "hesapadi";
-
-            if (normalized == "tarih" || normalized.Contains("fistarihi") || normalized.Contains("islemtarihi"))
+            // Tarih
+            if (normalized == "tarih" || normalized.Contains("fistarihi") || normalized.Contains("islemtarihi") ||
+                normalized.Contains("belgetarih") || normalized.Contains("belgetrh") ||
+                normalized.Contains("kayittarih") || normalized.Contains("kayittrh"))
                 return "tarih";
 
-            if (normalized.Contains("fisturu") || normalized.Contains("fistipi"))
-                return "fisturu";
+            // Hesap
+            if (normalized.Contains("hesapkodu") || normalized == "kodu" ||
+                normalized.Contains("anahesap") || (normalized.Contains("ana") && normalized.Contains("hesap")) ||
+                normalized.Contains("hesapno"))
+                return "hesapkodu";
 
-            if (normalized == "fisno" || normalized.Contains("fisno") || normalized.Contains("yevmiye") || normalized.Contains("belgeno"))
+            if (normalized.Contains("hesapadi") || normalized.Contains("unvan") ||
+                normalized.Contains("hesapaciklama") || normalized.Contains("hesapaciklamasi"))
+                return "hesapadi";
+
+            // Fiş/Belge no
+            if (normalized == "fisno" || normalized.Contains("fisno") ||
+                (normalized.Contains("yevmiye") && normalized.Contains("no")) ||
+                normalized.Contains("belgeno") || (normalized.Contains("belge") && normalized.Contains("no")))
                 return "fisno";
 
-            if (normalized.Contains("fisnumarasi") || normalized.Contains("fisnumara"))
-                return "fisnumarasi";
+            if (normalized.Contains("fisnumarasi2")) return "fisnumarasi2";
+            if (normalized.Contains("fisnumarasi") || normalized.Contains("fisnumara")) return "fisnumarasi";
 
-            if (normalized.Contains("aciklama") || normalized.Contains("detaycomment") || normalized.Contains("comment"))
+            // Fiş türü
+            if (normalized.Contains("fisturu") || normalized.Contains("fistipi")) return "fisturu";
+
+            // Açıklama
+            if (normalized.Contains("aciklama") || normalized.Contains("comment") || normalized.Contains("detaycomment") ||
+                normalized.Contains("metin") || normalized.Contains("belgeaciklama") || normalized.Contains("belgeaciklamasi"))
                 return "aciklama";
+
+            // Borç/Alacak (özellikle "Borç Tutar", "Alacak Tutar")
+            if (normalized.Contains("borctutar") || (normalized.Contains("borc") && normalized.Contains("tutar")))
+                return "borc";
+
+            if (normalized.Contains("alacaktutar") || (normalized.Contains("alacak") && normalized.Contains("tutar")))
+                return "alacak";
 
             if (normalized == "borc" || normalized.Contains("borc")) return "borc";
             if (normalized == "alacak" || normalized.Contains("alacak")) return "alacak";
 
+            // Tutar / Amount
+            if (normalized.Contains("tutarup")) return "tutar";
             if (normalized.Contains("tutar") || normalized.Contains("amount")) return "tutar";
 
+            // DC
             if (normalized.Contains("debitcredit") || normalized == "dc" || normalized.Contains("borcalacak"))
                 return "debitcredit";
-
-            if (normalized.Contains("fisnumarasi2")) return "fisnumarasi2";
 
             return normalized;
         }
@@ -451,14 +588,30 @@ namespace Muavin.Xml.Parsing
         private static decimal ParseDecimalFlexible(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return 0m;
-            s = Unquote(s);
+            s = Unquote(s).Trim();
+
+            bool parenNeg = s.StartsWith("(") && s.EndsWith(")");
+            if (parenNeg) s = s.Substring(1, s.Length - 2).Trim();
+
+            bool trailingNeg = s.EndsWith("-");
+            if (trailingNeg) s = s.Substring(0, s.Length - 1).Trim();
+
+            s = s.Replace("TL", "", StringComparison.OrdinalIgnoreCase)
+                 .Replace("TRY", "", StringComparison.OrdinalIgnoreCase)
+                 .Trim();
 
             if (decimal.TryParse(s, NumberStyles.Any, Tr, out var d))
+            {
+                if (parenNeg || trailingNeg) d = -d;
                 return d;
+            }
 
             var normalized = s.Replace(".", "").Replace(",", ".");
             if (decimal.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out d))
+            {
+                if (parenNeg || trailingNeg) d = -d;
                 return d;
+            }
 
             return 0m;
         }

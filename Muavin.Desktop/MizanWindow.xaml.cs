@@ -1,13 +1,15 @@
 ﻿// MizanWindow.xaml.cs
+using ClosedXML.Excel;
+using Microsoft.Win32;
+using Muavin.Desktop.ViewModels;
+using Muavin.Xml.Parsing;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
-using ClosedXML.Excel;
-using Microsoft.Win32;
-using Muavin.Desktop.ViewModels;
-using Muavin.Xml.Parsing;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace Muavin.Desktop
 {
@@ -22,6 +24,36 @@ namespace Muavin.Desktop
             var list = rows?.ToList() ?? new List<MuavinRow>();
             _vm = new MizanViewModel(list);
             DataContext = _vm;
+        }
+
+        // ✅ Drill-down: çift tıkla detay penceresi
+        private void MizanGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (DataContext is not MizanViewModel vm) return;
+
+            if (sender is not DataGrid dg) return;
+            if (dg.SelectedItem is not MizanRow selected) return;
+
+            // boş satırsa çık
+            if (string.IsNullOrWhiteSpace(selected.Kebir)) return;
+
+            // drilldown vm oluştur
+            var ddVm = new MizanDrillDownViewModel(
+                source: vm.SourceRows,      // ✅ kaynağı VM üzerinden al
+                selected: selected,
+                startDate: vm.StartDate,
+                endDate: vm.EndDate
+            );
+
+            var win = new MizanDrillDownWindow
+            {
+                Owner = this,
+                DataContext = ddVm
+            };
+
+            
+
+            win.ShowDialog();
         }
 
         private void BtnExportExcel_Click(object sender, RoutedEventArgs e)

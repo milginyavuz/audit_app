@@ -1,14 +1,54 @@
-﻿<!-- Muavin.Desktop/EntryDetailsWindow.xaml -->
-<Window x:Class="Muavin.Desktop.EntryDetailsWindow"
+﻿<Window x:Class="Muavin.Desktop.EntryDetailsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Fiş Detayı" Width="1100" Height="520"
+        Title="Fiş Detayı" Width="1100" Height="560"
         WindowStartupLocation="CenterOwner">
-    <Grid Margin="8">
-        <DataGrid ItemsSource="{Binding}"
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Üst bilgi -->
+        <TextBlock Text="{Binding TitleText}"
+                   FontSize="16"
+                   FontWeight="Bold" />
+
+        <!-- Toplamlar -->
+        <DockPanel Grid.Row="1" Margin="0,8,0,10">
+            <TextBlock DockPanel.Dock="Left"
+                       Text="{Binding WarningText}"
+                       Foreground="DarkRed"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <TextBlock Text="Toplam Borç: " VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding TotalBorc, StringFormat={}{0:N2}}"
+                           FontWeight="Bold" Margin="0,0,18,0" VerticalAlignment="Center"/>
+
+                <TextBlock Text="Toplam Alacak: " VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding TotalAlacak, StringFormat={}{0:N2}}"
+                           FontWeight="Bold" Margin="0,0,18,0" VerticalAlignment="Center"/>
+
+                <TextBlock Text="Fark: " VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding DiffText}"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Liste -->
+        <DataGrid Grid.Row="2"
+                  ItemsSource="{Binding Rows}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
-                  CanUserAddRows="False">
+                  CanUserAddRows="False"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  RowHeaderWidth="0">
             <DataGrid.Resources>
                 <Style x:Key="RightAlign" TargetType="TextBlock">
                     <Setter Property="TextAlignment" Value="Right"/>

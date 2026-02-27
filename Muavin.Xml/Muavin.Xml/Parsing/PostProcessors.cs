@@ -1,5 +1,6 @@
 ﻿// PostProcessors.cs
 using ClosedXML.Excel;
+using Muavin.Xml.Util;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -16,17 +17,29 @@ namespace Muavin.Xml.Parsing
         /// hızlı sürüm: grup bazında kebir setlerini 1 kez hesaplar stringleri cacheler
         /// alsoAccountCodes=true ise ayrıca ContraHesapCsv (hesap kodları) ve ContraKebirCsv de doldurur
         /// </summary>
-        public static void FillContraAccounts(IList<MuavinRow> rows, bool alsoAccountCodes = false)
+        public static void FillContraAccounts(
+            IList<MuavinRow> rows,
+            string? normalizedSourceFile = null,
+            bool alsoAccountCodes = false)
         {
             if (rows is null || rows.Count == 0) return;
+
+            // Tek doğru GroupKey üretimi: normalizedSourceFile normalize edilmiş olmalı
+            // (örn: GroupKeyUtil.NormalizeSourceFile(file))
+            var normalizedSrc = GroupKeyUtil.NormalizeSourceFile(normalizedSourceFile);
 
             // önce group key ve taraf (D/C)
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
+
                 r.Side = (r.Borc > 0m) ? "D" : (r.Alacak > 0m) ? "C" : "";
-                r.GroupKey = BuildGroupKey(r);
+
+                // DB’den gelen satırlarda GroupKey zaten dolu olabilir; boşsa üret.
+                if (string.IsNullOrWhiteSpace(r.GroupKey))
+                    r.GroupKey = GroupKeyUtil.Build(r.EntryNumber, r.PostingDate, r.DocumentNumber, r.FisTuru, normalizedSrc);
             }
+
 
             // grup (fiş) bazında 
             // Dictionary<groupKey, list indices> – index listesi kopya oluşturmayı azaltır
